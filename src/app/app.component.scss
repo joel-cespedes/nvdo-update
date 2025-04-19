@@ -1,0 +1,60 @@
+// Basic layout styles for AppComponent
+
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh; // Ensure app takes full viewport height
+  font-family: sans-serif; // Consistent base font
+}
+
+.app-header {
+  background-color: #3f51b5; // Example header color (Indigo)
+  color: white;
+  padding: 1rem 1.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+  h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: normal;
+  }
+}
+
+.app-main {
+  flex-grow: 1; // Allow main content to fill available space
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column; // Stack connection and sensor data
+  gap: 1.5rem; // Space between connection component and data area
+}
+
+.sensor-data-area {
+  // Styles for the container of sensor displays can be added later
+  // e.g., display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem;
+  border: 1px dashed #ccc;
+  padding: 1rem;
+  min-height: 200px; // Placeholder height
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #aaa;
+  font-style: italic;
+
+  &::before {
+    content: "Sensor data displays will appear here...";
+  }
+}
+
+.app-footer {
+  background-color: #f5f5f5; // Light grey footer
+  color: #666;
+  padding: 1rem 1.5rem;
+  text-align: center;
+  font-size: 0.9rem;
+  margin-top: auto; // Push footer to the bottom
+}
+
+// Hide router outlet if not used
+router-outlet:empty {
+  display: none;
+}

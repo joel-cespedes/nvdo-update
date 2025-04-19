@@ -1,0 +1,25 @@
+<div class="connection">
+  <h2 class="connection__title">Movesense Connection</h2>
+
+  @if (connectionError(); as error) {
+    <div class="connection__status connection__status--error">
+      Error: {{ error }}
+    </div>
+  }
+
+  @if (isConnected()) {
+    <div class="connection__status connection__status--connected">
+      Connected to: {{ deviceName() || 'Movesense Device' }}
+    </div>
+    <button class="connection__button connection__button--disconnect" (click)="disconnect()">
+      Disconnect
+    </button>
+  } @else {
+    <div class="connection__status connection__status--disconnected">
+      Disconnected
+    </div>
+    <button class="connection__button connection__button--connect" (click)="connect()" [disabled]="isConnected()">
+      Connect to Movesense
+    </button>
+  }
+</div>

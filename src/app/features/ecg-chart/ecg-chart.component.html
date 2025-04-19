@@ -1,0 +1,27 @@
+<div class="ecg-chart">
+  <h3 class="ecg-chart__title">ECG (mV)</h3>
+  @if (isConnected()) {
+    @if (chartData()[0].series.length > 0) {
+      <ngx-charts-line-chart
+        class="ecg-chart__chart-container"
+        [view]="view"
+        [scheme]="colorScheme"
+        [results]="chartData()"
+        [legend]="legend"
+        [xAxis]="true"
+        [yAxis]="true"
+        [showXAxisLabel]="showXAxisLabel"
+        [showYAxisLabel]="showYAxisLabel"
+        [xAxisLabel]="xAxisLabel"
+        [yAxisLabel]="yAxisLabel"
+        [timeline]="timeline"
+        [autoScale]="autoScale"
+        [xAxisTickFormatting]="xAxisTickFormatting">
+      </ngx-charts-line-chart>
+    } @else {
+      <div class="ecg-chart__nodata">Waiting for ECG data...</div>
+    }
+  } @else {
+    <div class="ecg-chart__disconnected">Connect device to see chart</div>
+  }
+</div>

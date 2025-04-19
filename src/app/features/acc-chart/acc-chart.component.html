@@ -1,0 +1,27 @@
+<div class="acc-chart">
+  <h3 class="acc-chart__title">Accelerometer (m/s²)</h3>
+  @if (isConnected()) {
+    @if (chartData()[0].series.length > 0) {
+      <ngx-charts-line-chart
+        class="acc-chart__chart-container"
+        [view]="view"
+        [scheme]="colorScheme"
+        [results]="chartData()"
+        [legend]="legend"
+        [xAxis]="true"
+        [yAxis]="true"
+        [showXAxisLabel]="showXAxisLabel"
+        [showYAxisLabel]="showYAxisLabel"
+        [xAxisLabel]="xAxisLabel"
+        [yAxisLabel]="yAxisLabel"
+        [timeline]="timeline"
+        [autoScale]="autoScale"
+        [xAxisTickFormatting]="xAxisTickFormatting">
+      </ngx-charts-line-chart>
+    } @else {
+      <div class="acc-chart__nodata">Waiting for Accelerometer data...</div>
+    }
+  } @else {
+    <div class="acc-chart__disconnected">Connect device to see chart</div>
+  }
+</div>

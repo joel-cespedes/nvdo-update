@@ -1,0 +1,24 @@
+// Inherit most styles from hr-chart for consistency
+@use "../hr-chart/hr-chart.component.scss" as hr-styles;
+
+.ecg-chart {
+  @extend .hr-chart; // Extend base styles
+
+  &__title {
+    @extend .hr-chart__title; // Extend title style
+  }
+
+  &__chart-container {
+    @extend .hr-chart__chart-container; // Extend chart container style
+  }
+
+  &__nodata {
+    @extend .hr-chart__nodata; // Extend nodata message style
+  }
+
+  &__disconnected {
+    @extend .hr-chart__disconnected; // Extend disconnected message style
+  }
+
+  // Specific overrides for ecg-chart can go here if needed
+}
