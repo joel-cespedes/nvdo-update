@@ -1,5 +1,16 @@
 <div class="ecg-chart">
-  <h3 class="ecg-chart__title">ECG (mV)</h3>
+  <div class="ecg-chart__header">
+    <h3 class="ecg-chart__title">ECG (mV)</h3>
+    @if(isConnected()) {
+      <div class="ecg-chart__controls">
+        @if (isRecording()) {
+          <button class="ecg-chart__button ecg-chart__button--stop" (click)="stopRecording()">Stop Recording</button>
+        } @else {
+          <button class="ecg-chart__button ecg-chart__button--start" (click)="startRecording()">Start Recording</button>
+        }
+      </div>
+    }
+  </div>
   @if (isConnected()) {
     @if (chartData()[0].series.length > 0) {
       <ngx-charts-line-chart

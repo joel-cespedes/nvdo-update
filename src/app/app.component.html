@@ -4,14 +4,20 @@
 
 <main class="app-main">
   <app-connection></app-connection>
+  <app-debug-panel></app-debug-panel>
 
-  <!-- Sensor data display components will go here later -->
+  <!-- Calculated Metrics -->
+  <app-metrics-display></app-metrics-display>
+
+  <!-- Sensor Data Displays -->
   <div class="sensor-data-area">
     <app-temperature-display></app-temperature-display>
     <app-hr-chart></app-hr-chart>
     <app-acc-chart></app-acc-chart>
     <app-ecg-chart></app-ecg-chart>
-    <!-- Other sensor displays will go here -->
+    <app-gyro-display></app-gyro-display>       <!-- Added Gyro -->
+    <app-magn-display></app-magn-display>       <!-- Added Magn -->
+    <!-- Placeholder for IMU if needed -->
   </div>
 
   <!-- Router outlet for potential future navigation -->

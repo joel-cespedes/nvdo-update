@@ -1,6 +1,7 @@
 import { Component, inject, ChangeDetectionStrategy, signal, WritableSignal, computed, Signal, effect } from '@angular/core';
 import { NgxChartsModule, ScaleType } from '@swimlane/ngx-charts'; // Import the module
-import { MovesenseService, HeartRateData } from '../../core/services/movesense.service';
+import { MovesenseService } from '../../core/services/movesense.service';
+import { HeartRateData } from '../../core/services/models/movesense.model';
 
 // Interface for ngx-charts data format
 export interface ChartData {

@@ -1,7 +1,8 @@
 import { Component, inject, ChangeDetectionStrategy, signal, WritableSignal, computed, Signal, effect } from '@angular/core';
 import { NgxChartsModule, ScaleType } from '@swimlane/ngx-charts'; // Import the module
-import { MovesenseService, AccelerometerData } from '../../core/services/movesense.service';
+import { MovesenseService } from '../../core/services/movesense.service';
 import { ChartData, ChartSeriesData } from '../hr-chart/hr-chart.component'; // Reuse chart interfaces
+import { AccelerometerData } from '../../core/services/models/movesense.model';
 
 const MAX_ACC_DATA_POINTS = 100; // Keep history for accelerometer
 
@@ -47,11 +48,11 @@ export class AccChartComponent {
         // Effect to update chart when new Accelerometer data arrives
         // Note: Acc data might arrive in batches. This assumes the service provides an array.
         effect(() => {
-            const newAccDataArray = this.movesenseService.accelerometerData(); // Get latest Acc data array
-            if (newAccDataArray && this.isConnected() && newAccDataArray.length > 0) {
-                // Process the last sample in the array for simplicity,
-                // or loop through all if needed (might impact performance)
-                this.updateChart(newAccDataArray[newAccDataArray.length - 1]);
+            const newAccDataObject = this.movesenseService.accelerometerData(); // Get latest Acc data object
+            // Check if the object exists, we are connected, and the samples array is not empty
+            if (newAccDataObject && this.isConnected()) {
+                // Pass the whole object to updateChart
+                this.updateChart(newAccDataObject);
             }
         }, { allowSignalWrites: true });
 
@@ -69,16 +70,22 @@ export class AccChartComponent {
 
     private updateChart(newData: AccelerometerData): void {
         this.chartData.update(currentChartData => {
-            const timestamp = new Date(newData.timestamp); // Use Date object
+            // Create a single new data point since AccelerometerData has a single x, y, z reading
+            const timestamp = new Date(newData.timestamp);
 
-            const newSeriesX = [...currentChartData[0].series, { name: timestamp, value: newData.x }].slice(-MAX_ACC_DATA_POINTS);
-            const newSeriesY = [...currentChartData[1].series, { name: timestamp, value: newData.y }].slice(-MAX_ACC_DATA_POINTS);
-            const newSeriesZ = [...currentChartData[2].series, { name: timestamp, value: newData.z }].slice(-MAX_ACC_DATA_POINTS);
+            const newPointX: ChartSeriesData = { name: timestamp, value: newData.x };
+            const newPointY: ChartSeriesData = { name: timestamp, value: newData.y };
+            const newPointZ: ChartSeriesData = { name: timestamp, value: newData.z };
+
+            // Add new points and limit history
+            const updatedSeriesX = [...currentChartData[0].series, newPointX].slice(-MAX_ACC_DATA_POINTS);
+            const updatedSeriesY = [...currentChartData[1].series, newPointY].slice(-MAX_ACC_DATA_POINTS);
+            const updatedSeriesZ = [...currentChartData[2].series, newPointZ].slice(-MAX_ACC_DATA_POINTS);
 
             return [
-                { name: 'X', series: newSeriesX },
-                { name: 'Y', series: newSeriesY },
-                { name: 'Z', series: newSeriesZ }
+                { name: 'X', series: updatedSeriesX },
+                { name: 'Y', series: updatedSeriesY },
+                { name: 'Z', series: updatedSeriesZ }
             ];
         });
     }

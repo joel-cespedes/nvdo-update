@@ -4,8 +4,45 @@
 .ecg-chart {
   @extend .hr-chart; // Extend base styles
 
+  &__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%; // Make header take full width
+    margin-bottom: 0.5rem; // Adjust spacing
+  }
+
   &__title {
     @extend .hr-chart__title; // Extend title style
+    margin-bottom: 0; // Remove bottom margin from title itself
+  }
+
+  &__controls {
+    // Styles for the button container
+  }
+
+  &__button {
+    padding: 0.4rem 0.8rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background-color 0.2s ease;
+    color: white;
+
+    &--start {
+      background-color: #4caf50; // Green
+      &:hover {
+        background-color: #45a049;
+      }
+    }
+
+    &--stop {
+      background-color: #f44336; // Red
+      &:hover {
+        background-color: #e53935;
+      }
+    }
   }
 
   &__chart-container {

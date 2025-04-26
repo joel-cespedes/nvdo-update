@@ -28,21 +28,26 @@
   gap: 1.5rem; // Space between connection component and data area
 }
 
+// Container for all sensor display components
 .sensor-data-area {
-  // Styles for the container of sensor displays can be added later
-  // e.g., display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem;
-  border: 1px dashed #ccc;
-  padding: 1rem;
-  min-height: 200px; // Placeholder height
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #aaa;
-  font-style: italic;
+  display: grid;
+  // Adjust grid columns based on chart sizes and desired layout
+  // This example tries to fit charts (700px wide) and smaller displays
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(300px, 1fr)
+  ); // Basic responsive grid
+  gap: 1.5rem; // Gap between grid items
+  padding-top: 1rem; // Add some space above the sensor grid
 
-  &::before {
-    content: "Sensor data displays will appear here...";
-  }
+  // Remove placeholder styles if they existed
+  // border: none;
+  // min-height: auto;
+  // align-items: initial;
+  // justify-content: initial;
+  // color: initial;
+  // font-style: initial;
+  // &::before { content: none; }
 }
 
 .app-footer {

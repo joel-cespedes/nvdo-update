@@ -1,0 +1,13 @@
+{
+  // Rutas que Roo Code escaneará para indexar (pueden ser glob patterns)
+  "rooCode.localKnowledge.paths": [
+    "${workspaceFolder}/docs-externas/**/*.pdf"
+  ],
+  // Cada cuánto (en minutos) reindexa los archivos
+  "rooCode.localKnowledge.indexInterval": 30,
+  "angular-schematics.schematicsDefaultOptions": {
+    "angular-*": {
+      "externalTemplate": true
+    }
+  }
+}

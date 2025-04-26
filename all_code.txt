@@ -1,0 +1,3055 @@
+---- src/index.html ----
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>NvdoUpdate</title>
+  <base href="/">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+</head>
+<body>
+  <app-root></app-root>
+</body>
+</html>
+
+---- src/app/app.component.html ----
+<header class="app-header">
+  <h1>Movesense Dashboard</h1>
+</header>
+
+<main class="app-main">
+  <app-connection></app-connection>
+  <app-debug-panel></app-debug-panel>
+
+  <!-- Calculated Metrics -->
+  <app-metrics-display></app-metrics-display>
+
+  <!-- Sensor Data Displays -->
+  <div class="sensor-data-area">
+    <app-temperature-display></app-temperature-display>
+    <app-hr-chart></app-hr-chart>
+    <app-acc-chart></app-acc-chart>
+    <app-ecg-chart></app-ecg-chart>
+    <app-gyro-display></app-gyro-display>       <!-- Added Gyro -->
+    <app-magn-display></app-magn-display>       <!-- Added Magn -->
+    <!-- Placeholder for IMU if needed -->
+  </div>
+
+  <!-- Router outlet for potential future navigation -->
+  <router-outlet />
+</main>
+
+<footer class="app-footer">
+  <p>Movesense Angular App</p>
+</footer>
+
+---- src/app/core/services/movesense-logger.service.ts ----
+import { Injectable, signal, WritableSignal } from '@angular/core';
+
+/**
+ * Service for logging and debugging Movesense operations
+ */
+@Injectable({
+    providedIn: 'root',
+})
+export class MovesenseLoggerService {
+    // Log signal contains all logs as timestamp + message
+    readonly logEntries: WritableSignal<string[]> = signal([]);
+    readonly maxLogSize = 100; // Maximum number of log entries to keep
+
+    constructor() {
+        console.log('MovesenseLoggerService initialized');
+    }
+
+    /**
+     * Add an entry to the log
+     */
+    log(message: string): void {
+        const timestampedMessage = `${new Date().toLocaleTimeString()}: ${message}`;
+        console.log(`Movesense: ${message}`);
+
+        this.logEntries.update(entries => {
+            const newEntries = [...entries, timestampedMessage];
+            // Keep log size within limits
+            return newEntries.slice(-this.maxLogSize);
+        });
+    }
+
+    /**
+     * Clear all log entries
+     */
+    clearLogs(): void {
+        this.logEntries.set([]);
+    }
+
+    /**
+     * Log with error level
+     */
+    error(message: string, error?: any): void {
+        let errorMessage = message;
+
+        if (error) {
+            if (error instanceof Error) {
+                errorMessage += `: ${error.message}`;
+            } else {
+                errorMessage += `: ${String(error)}`;
+            }
+        }
+
+        console.error(`Movesense Error: ${errorMessage}`);
+        this.log(`❌ ERROR: ${errorMessage}`);
+    }
+
+    /**
+     * Log with warning level
+     */
+    warn(message: string): void {
+        console.warn(`Movesense Warning: ${message}`);
+        this.log(`⚠️ WARNING: ${message}`);
+    }
+
+    /**
+     * Log with success level
+     */
+    success(message: string): void {
+        console.log(`Movesense Success: ${message}`);
+        this.log(`✅ ${message}`);
+    }
+
+    /**
+     * Log buffer as hex for debugging
+     */
+    bufferToHex(buffer: Uint8Array): string {
+        return Array.from(buffer)
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join(' ');
+    }
+}
+---- src/app/core/services/movesense-connection.service.ts ----
+import { Injectable, signal, WritableSignal } from '@angular/core';
+import { MOVESENSE_BLE, MOVESENSE_COMMANDS } from './models/movesense.model';
+import { MovesenseLoggerService } from './movesense-logger.service';
+
+@Injectable({
+    providedIn: 'root',
+})
+export class MovesenseConnectionService {
+    // --- Connection State ---
+    readonly isConnected: WritableSignal<boolean> = signal(false);
+    readonly deviceName: WritableSignal<string> = signal('');
+    readonly connectionError: WritableSignal<string | null> = signal(null);
+    readonly reconnectAttempts: WritableSignal<number> = signal(0);
+
+    // --- BLE Properties ---
+    private bleServer: BluetoothRemoteGATTServer | null = null;
+    private commandChar: BluetoothRemoteGATTCharacteristic | null = null;
+    private notifyChar: BluetoothRemoteGATTCharacteristic | null = null;
+    private device: BluetoothDevice | null = null;
+    private notificationHandler: ((event: Event) => void) | null = null;
+
+    // --- Command Queue ---
+    private commandQueue: { command: Uint8Array, description: string }[] = [];
+    private isProcessingQueue = false;
+    private lastCommandTime = 0;
+
+    // --- Reconnection ---
+    private reconnectTimer: any = null;
+    private maxReconnectAttempts = 3;
+
+    constructor(private logger: MovesenseLoggerService) {
+        console.log('MovesenseConnectionService initialized');
+    }
+
+    /**
+     * Connect to a Movesense device
+     */
+    async connect(): Promise<void> {
+        this.connectionError.set(null);
+        this.resetReconnectAttempts();
+        this.logger.log('Requesting Bluetooth device...');
+
+        try {
+            this.device = await navigator.bluetooth.requestDevice({
+                filters: [{ namePrefix: 'Movesense' }],
+                optionalServices: [MOVESENSE_BLE.SERVICE_UUID],
+            });
+
+            if (!this.device.gatt) {
+                throw new Error('GATT Server not available.');
+            }
+
+            this.deviceName.set(this.device.name || 'Movesense Device');
+            this.logger.log(`Connecting to GATT Server on ${this.deviceName()}...`);
+
+            // Setup disconnect handler
+            this.device.addEventListener('gattserverdisconnected', this.handleDisconnect.bind(this));
+
+            // Establish connection
+            this.bleServer = await this.device.gatt.connect();
+            this.logger.log('Connected to GATT Server.');
+
+            // Get service and characteristics
+            const service = await this.bleServer.getPrimaryService(MOVESENSE_BLE.SERVICE_UUID);
+            this.logger.log(`Got service: ${MOVESENSE_BLE.SERVICE_UUID}`);
+
+            this.commandChar = await service.getCharacteristic(MOVESENSE_BLE.CHAR_COMMAND_UUID);
+            this.logger.log(`Got command characteristic: ${MOVESENSE_BLE.CHAR_COMMAND_UUID}`);
+
+            this.notifyChar = await service.getCharacteristic(MOVESENSE_BLE.CHAR_NOTIFY_UUID);
+            this.logger.log(`Got notify characteristic: ${MOVESENSE_BLE.CHAR_NOTIFY_UUID}`);
+
+            // Start notifications
+            await this.notifyChar.startNotifications();
+            this.logger.log('✅ Notifications started.');
+
+            this.isConnected.set(true);
+            this.logger.log('✅ Movesense device connected successfully.');
+
+        } catch (error) {
+            this.handleConnectionError(error);
+        }
+    }
+
+    /**
+     * Disconnect from the device
+     */
+    async disconnect(): Promise<void> {
+        if (!this.bleServer || !this.isConnected()) {
+            this.logger.log('⚠️ Not connected, no need to disconnect.');
+            return;
+        }
+
+        this.logger.log('Disconnecting from GATT Server...');
+        this.clearReconnectTimer();
+        this.bleServer.disconnect();
+    }
+
+    /**
+     * Register a notification handler
+     */
+    registerNotificationHandler(handler: (event: Event) => void): void {
+        if (!this.notifyChar || !this.isConnected()) {
+            this.logger.error('Cannot register notification handler: Not connected');
+            return;
+        }
+
+        // Remove existing handler if any
+        this.unregisterNotificationHandler();
+
+        // Store new handler
+        this.notificationHandler = handler;
+
+        // Add event listener
+        this.notifyChar.addEventListener('characteristicvaluechanged', handler);
+
+        this.logger.log('Notification handler registered');
+    }
+
+    /**
+     * Unregister notification handler
+     */
+    unregisterNotificationHandler(): void {
+        if (this.notifyChar && this.notificationHandler) {
+            try {
+                this.notifyChar.removeEventListener('characteristicvaluechanged', this.notificationHandler);
+                this.logger.log('Notification handler unregistered');
+            } catch (e) {
+                this.logger.error('Error removing notification listener', e);
+            }
+            this.notificationHandler = null;
+        }
+    }
+
+    /**
+     * Send a raw command with a specific byte array
+     * This is the method that actually works with the device
+     */
+    sendCommandRaw(commandData: Uint8Array, commandDescription: string): void {
+        this.enqueueCommand(commandData, commandDescription);
+    }
+
+    /**
+     * Get notification characteristic for adding event listeners
+     */
+    getNotifyCharacteristic(): BluetoothRemoteGATTCharacteristic | null {
+        return this.notifyChar;
+    }
+
+    /**
+     * Subscribe to sensors using the device-specific format
+     */
+    subscribeToSensors(): void {
+        if (!this.isConnected()) {
+            this.logger.warn('Cannot subscribe to sensors: Not connected');
+            return;
+        }
+
+        this.logger.log('Subscribing to sensors with specific format commands...');
+
+        // Temperature
+        this.sendCommandRaw(MOVESENSE_COMMANDS.TEMPERATURE, 'Temperature sensor');
+
+        // Accelerometer
+        this.sendCommandRaw(MOVESENSE_COMMANDS.ACCELEROMETER, 'Accelerometer sensor');
+
+        // Heart rate
+        this.sendCommandRaw(MOVESENSE_COMMANDS.HEART_RATE, 'Heart rate sensor');
+
+        // Gyroscope
+        this.sendCommandRaw(MOVESENSE_COMMANDS.GYROSCOPE, 'Gyroscope sensor');
+
+        // Magnetometer
+        this.sendCommandRaw(MOVESENSE_COMMANDS.MAGNETOMETER, 'Magnetometer sensor');
+
+        // ECG (may not be available on all devices)
+        this.sendCommandRaw(MOVESENSE_COMMANDS.ECG, 'ECG sensor');
+    }
+
+    // --- Private Methods ---
+
+    /**
+     * Add a command to the queue
+     */
+    private enqueueCommand(command: Uint8Array, description: string): void {
+        this.commandQueue.push({ command, description });
+        this.processCommandQueue();
+    }
+
+    /**
+     * Process the command queue
+     */
+    private async processCommandQueue(): Promise<void> {
+        if (this.isProcessingQueue || this.commandQueue.length === 0 || !this.isConnected()) {
+            return;
+        }
+
+        this.isProcessingQueue = true;
+
+        try {
+            // Rate limit commands
+            const now = Date.now();
+            const timeSinceLastCommand = now - this.lastCommandTime;
+
+            if (timeSinceLastCommand < 200) {
+                await new Promise(resolve => setTimeout(resolve, 200 - timeSinceLastCommand));
+            }
+
+            const { command, description } = this.commandQueue.shift()!;
+            await this.sendCommandDirectly(command, description);
+            this.lastCommandTime = Date.now();
+
+        } catch (error) {
+            this.logger.error('Error processing command queue', error);
+        } finally {
+            this.isProcessingQueue = false;
+
+            // Process next command if any
+            if (this.commandQueue.length > 0) {
+                setTimeout(() => this.processCommandQueue(), 50);
+            }
+        }
+    }
+
+    /**
+     * Send command directly to device
+     */
+    private async sendCommandDirectly(commandData: Uint8Array, commandDescription: string): Promise<void> {
+        if (!this.commandChar || !this.isConnected()) {
+            this.logger.error(`Cannot send command "${commandDescription}": not connected`);
+            return Promise.reject('Device not connected');
+        }
+
+        this.logger.log(`Sending command: ${commandDescription}`);
+
+        try {
+            await this.commandChar.writeValue(commandData);
+            this.logger.log(`✅ Command sent: ${commandDescription}`);
+            console.log(`✅ Command sent: ${commandDescription} - data:`, Array.from(commandData));
+        } catch (error) {
+            this.logger.error(`Failed to send command "${commandDescription}"`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Handle when device disconnects
+     */
+    private handleDisconnect(event: Event): void {
+        this.logger.log('Device disconnected');
+
+        // Check if we should try to reconnect
+        if (this.isConnected() && this.reconnectAttempts() < this.maxReconnectAttempts) {
+            this.reconnectAttempts.update(attempts => attempts + 1);
+            this.logger.log(`Scheduling reconnect attempt ${this.reconnectAttempts()}/${this.maxReconnectAttempts}`);
+
+            // Schedule reconnection
+            this.clearReconnectTimer();
+            this.reconnectTimer = setTimeout(() => {
+                this.attemptReconnect();
+            }, 2000); // Wait 2 seconds before reconnecting
+        } else {
+            this.resetState();
+        }
+    }
+
+    /**
+     * Attempt to reconnect to the device
+     */
+    private async attemptReconnect(): Promise<void> {
+        if (!this.device || !this.device.gatt) {
+            this.logger.log('Cannot reconnect: device reference lost');
+            this.resetState();
+            return;
+        }
+
+        try {
+            this.logger.log(`Reconnect attempt ${this.reconnectAttempts()}/${this.maxReconnectAttempts}...`);
+
+            // Establish connection
+            this.bleServer = await this.device.gatt.connect();
+            this.logger.log('Connected to GATT Server.');
+
+            // Get service and characteristics
+            const service = await this.bleServer.getPrimaryService(MOVESENSE_BLE.SERVICE_UUID);
+            this.commandChar = await service.getCharacteristic(MOVESENSE_BLE.CHAR_COMMAND_UUID);
+            this.notifyChar = await service.getCharacteristic(MOVESENSE_BLE.CHAR_NOTIFY_UUID);
+
+            // Start notifications
+            await this.notifyChar.startNotifications();
+
+            this.isConnected.set(true);
+            this.logger.log('✅ Reconnected successfully');
+
+        } catch (error) {
+            this.logger.error('Reconnection failed', error);
+
+            // Schedule another attempt if we haven't reached the limit
+            if (this.reconnectAttempts() < this.maxReconnectAttempts) {
+                this.clearReconnectTimer();
+                this.reconnectTimer = setTimeout(() => {
+                    this.attemptReconnect();
+                }, 3000); // Increasing backoff
+            } else {
+                this.logger.log('Max reconnection attempts reached. Giving up.');
+                this.resetState();
+            }
+        }
+    }
+
+    /**
+     * Reset reconnect attempts counter
+     */
+    private resetReconnectAttempts(): void {
+        this.reconnectAttempts.set(0);
+        this.clearReconnectTimer();
+    }
+
+    /**
+     * Clear reconnect timer
+     */
+    private clearReconnectTimer(): void {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+    }
+
+    /**
+     * Handle connection error
+     */
+    private handleConnectionError(error: any): void {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        this.logger.error('Connection error', error);
+        this.connectionError.set(errorMessage);
+        this.isConnected.set(false);
+        this.resetState();
+    }
+
+    /**
+     * Reset all connection state
+     */
+    private resetState(): void {
+        this.isConnected.set(false);
+        this.deviceName.set('');
+        this.bleServer = null;
+        this.device = null;
+
+        this.unregisterNotificationHandler();
+
+        this.notifyChar = null;
+        this.commandChar = null;
+        this.notificationHandler = null;
+        this.commandQueue = [];
+        this.isProcessingQueue = false;
+
+        this.clearReconnectTimer();
+
+        this.logger.log('Connection state reset');
+    }
+}
+---- src/app/core/services/models/movesense.model.ts ----
+/**
+ * Modelos para los diferentes tipos de datos de sensores Movesense
+ */
+
+export interface AccelerometerData {
+    timestamp: number;
+    x: number;
+    y: number;
+    z: number;
+    magnitude: number;
+    samples?: { x: number; y: number; z: number }[];
+}
+
+export interface TemperatureData {
+    timestamp: number;
+    measurement: number; // In Celsius
+}
+
+export interface HeartRateData {
+    timestamp: number;
+    hr: number; // Average HR (BPM)
+    rrIntervals?: number[]; // RR intervals in ms
+}
+
+export interface EcgData {
+    timestamp: number;
+    samples: number[];
+}
+
+export interface GyroscopeData {
+    timestamp: number;
+    samples: { x: number; y: number; z: number }[];
+}
+
+export interface MagnetometerData {
+    timestamp: number;
+    samples: { x: number; y: number; z: number }[];
+}
+
+export interface ImuData {
+    timestamp: number;
+    samples: {
+        acc: { x: number; y: number; z: number };
+        gyro: { x: number; y: number; z: number };
+        magn: { x: number; y: number; z: number };
+    }[];
+}
+
+export type SensorStatus = 'inactive' | 'active' | 'error';
+
+export enum PostureState {
+    UNKNOWN = 'unknown',
+    STANDING = 'standing',
+    STOOPED = 'stooped',
+    LYING = 'lying'
+}
+
+// Define UUIDs for Movesense BLE service and characteristics
+export const MOVESENSE_BLE = {
+    SERVICE_UUID: '34802252-7185-4d5d-b431-630e7050e8f0',
+    CHAR_COMMAND_UUID: '34800001-7185-4d5d-b431-630e7050e8f0', // Write
+    CHAR_NOTIFY_UUID: '34800002-7185-4d5d-b431-630e7050e8f0',  // Notify
+};
+
+// Specific commands for Movesense device
+export const MOVESENSE_COMMANDS = {
+    TEMPERATURE: new Uint8Array([0x01, 0x62, 0x2f, 0x4d, 0x65, 0x61, 0x73, 0x2f, 0x54, 0x65, 0x6d, 0x70]),
+    ACCELEROMETER: new Uint8Array([0x0c, 0x62, 0x2f, 0x4d, 0x65, 0x61, 0x73, 0x2f, 0x41, 0x63, 0x63, 0x2f, 0x31, 0x30, 0x34]),
+    HEART_RATE: new Uint8Array([0x0c, 0x63, 0x2f, 0x4d, 0x65, 0x61, 0x73, 0x2f, 0x48, 0x52]),
+    ECG: new Uint8Array([0x01, 0x63, 0x2f, 0x4d, 0x65, 0x61, 0x73, 0x2f, 0x45, 0x43, 0x47, 0x2f, 0x31, 0x32, 0x35]),
+    GYROSCOPE: new Uint8Array([0x0c, 0x64, 0x2f, 0x4d, 0x65, 0x61, 0x73, 0x2f, 0x47, 0x79, 0x72, 0x6f, 0x2f, 0x31, 0x30, 0x34]),
+    MAGNETOMETER: new Uint8Array([0x0c, 0x65, 0x2f, 0x4d, 0x65, 0x61, 0x73, 0x2f, 0x4d, 0x61, 0x67, 0x6e, 0x2f, 0x31, 0x30, 0x34])
+};
+---- src/app/core/services/movesense.service.ts ----
+import { effect, inject, Injectable, Signal } from '@angular/core';
+
+import { MovesenseConnectionService } from './movesense-connection.service';
+
+import {
+    AccelerometerData,
+    EcgData,
+    GyroscopeData,
+    HeartRateData,
+    MagnetometerData,
+    MOVESENSE_COMMANDS,
+    PostureState,
+    SensorStatus,
+    TemperatureData
+} from './models/movesense.model';
+import { MovesenseDataProcessorService } from './movesense-data-processor.service';
+import { MovesenseLoggerService } from './movesense-logger.service';
+
+/**
+ * Main Movesense service that coordinates connection and data processing
+ */
+@Injectable({
+    providedIn: 'root',
+})
+export class MovesenseService {
+    private connectionService = inject(MovesenseConnectionService);
+    private dataProcessor = inject(MovesenseDataProcessorService);
+    private logger = inject(MovesenseLoggerService);
+
+    // Sensor data monitoring timer
+    private sensorMonitorTimer: any = null;
+
+    constructor() {
+        console.log('MovesenseService initialized');
+
+        // Monitor connection state
+        effect(() => {
+            if (this.isConnected()) {
+                this.setupSensorMonitoring();
+            } else {
+                this.clearSensorMonitoring();
+            }
+        });
+    }
+
+    // --- Public API: Connection Management ---
+
+    /** Connect to Movesense device */
+    async connect(): Promise<void> {
+        console.log('Connecting to Movesense device...');
+        try {
+            await this.connectionService.connect();
+
+            // Register notification handler
+            if (this.isConnected()) {
+                this.connectionService.registerNotificationHandler(this.handleNotification.bind(this));
+
+                // Start activity tracking for metrics
+                this.dataProcessor.startActivity();
+
+                // Subscribe to sensors
+                this.subscribeToSensors();
+            }
+        } catch (error) {
+            console.error('Error connecting to Movesense device:', error);
+            this.logger.error('Failed to connect to Movesense', error);
+        }
+    }
+
+    /** Disconnect from device */
+    async disconnect(): Promise<void> {
+        console.log('Disconnecting from Movesense device...');
+        await this.connectionService.disconnect();
+    }
+
+    /** Subscribe to available sensors */
+    subscribeToSensors(): void {
+        if (!this.isConnected()) {
+            console.warn('Cannot subscribe to sensors: Not connected');
+            return;
+        }
+
+        console.log('Subscribing to sensors...');
+        this.logger.log('Subscribing to all available sensors...');
+
+        // Use the device-specific command format
+        this.connectionService.subscribeToSensors();
+    }
+
+    // --- Public API: ECG Recording ---
+
+    /** Start recording ECG data */
+    startEcgRecording(): void {
+        this.dataProcessor.startEcgRecording();
+    }
+
+    /** Stop recording ECG data */
+    stopEcgRecording(): void {
+        this.dataProcessor.stopEcgRecording();
+    }
+
+    // --- Public API: Debug Functions ---
+
+    /** Clear log entries */
+    clearLog(): void {
+        this.logger.clearLogs();
+    }
+
+    /** Try specific format from original app */
+    trySpecificFormat(): void {
+        if (!this.isConnected()) {
+            this.logger.log('Cannot try specific format - not connected');
+            return;
+        }
+
+        this.logger.log('Trying specific format for this device model...');
+
+        // Send commands in the specific format
+        this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.TEMPERATURE, 'Temperature (specific format)');
+        this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.ACCELEROMETER, 'Accelerometer (specific format)');
+        this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.HEART_RATE, 'Heart rate (specific format)');
+        this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.GYROSCOPE, 'Gyroscope (specific format)');
+        this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.MAGNETOMETER, 'Magnetometer (specific format)');
+        this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.ECG, 'ECG (specific format)');
+    }
+
+    // --- Connection Signals (proxying from connectionService) ---
+
+    /** Is the device connected */
+    get isConnected(): Signal<boolean> {
+        return this.connectionService.isConnected;
+    }
+
+    /** Connected device name */
+    get deviceName(): Signal<string> {
+        return this.connectionService.deviceName;
+    }
+
+    /** Connection error if any */
+    get connectionError(): Signal<string | null> {
+        return this.connectionService.connectionError;
+    }
+
+    // --- Sensor Data Signals (proxying from dataProcessor) ---
+
+    /** Temperature data */
+    get temperatureData(): Signal<TemperatureData | null> {
+        return this.dataProcessor.temperatureData;
+    }
+
+    /** Accelerometer data */
+    get accelerometerData(): Signal<AccelerometerData | null> {
+        return this.dataProcessor.accelerometerData;
+    }
+
+    /** Heart rate data */
+    get heartRateData(): Signal<HeartRateData | null> {
+        return this.dataProcessor.heartRateData;
+    }
+
+    /** ECG data */
+    get ecgData(): Signal<EcgData | null> {
+        return this.dataProcessor.ecgData;
+    }
+
+    /** Gyroscope data */
+    get gyroscopeData(): Signal<GyroscopeData | null> {
+        return this.dataProcessor.gyroscopeData;
+    }
+
+    /** Magnetometer data */
+    get magnetometerData(): Signal<MagnetometerData | null> {
+        return this.dataProcessor.magnetometerData;
+    }
+
+    // --- Calculated Metrics Signals (proxying from dataProcessor) ---
+
+    /** Step count */
+    get steps(): Signal<number> {
+        return this.dataProcessor.steps;
+    }
+
+    /** Distance in meters */
+    get distance(): Signal<number> {
+        return this.dataProcessor.distance;
+    }
+
+    /** Current posture */
+    get posture(): Signal<PostureState> {
+        return this.dataProcessor.posture;
+    }
+
+    /** HRV RMSSD value */
+    get hrvRmssd(): Signal<number | null> {
+        return this.dataProcessor.hrvRmssd;
+    }
+
+    /** Stress level (0-100) */
+    get stressLevel(): Signal<number | null> {
+        return this.dataProcessor.stressLevel;
+    }
+
+    /** Dribble count */
+    get dribbleCount(): Signal<number> {
+        return this.dataProcessor.dribbleCount;
+    }
+
+    /** Calories burned */
+    get caloriesBurned(): Signal<number> {
+        return this.dataProcessor.caloriesBurned;
+    }
+
+    /** Fall detected status */
+    get fallDetected(): Signal<boolean> {
+        return this.dataProcessor.fallDetected;
+    }
+
+    /** Last fall timestamp */
+    get lastFallTimestamp(): Signal<number | null> {
+        return this.dataProcessor.lastFallTimestamp;
+    }
+
+    // --- Sensor Status Signals (proxying from dataProcessor) ---
+
+    /** Temperature sensor status */
+    get temperatureStatus(): Signal<SensorStatus> {
+        return this.dataProcessor.temperatureStatus;
+    }
+
+    /** Accelerometer sensor status */
+    get accelerometerStatus(): Signal<SensorStatus> {
+        return this.dataProcessor.accelerometerStatus;
+    }
+
+    /** Heart rate sensor status */
+    get heartRateStatus(): Signal<SensorStatus> {
+        return this.dataProcessor.heartRateStatus;
+    }
+
+    /** Gyroscope sensor status */
+    get gyroscopeStatus(): Signal<SensorStatus> {
+        return this.dataProcessor.gyroscopeStatus;
+    }
+
+    /** Magnetometer sensor status */
+    get magnetometerStatus(): Signal<SensorStatus> {
+        return this.dataProcessor.magnetometerStatus;
+    }
+
+    /** ECG sensor status */
+    get ecgStatus(): Signal<SensorStatus> {
+        return this.dataProcessor.ecgStatus;
+    }
+
+    // --- ECG Recording Signals (proxying from dataProcessor) ---
+
+    /** ECG recording active status */
+    get isEcgRecording(): Signal<boolean> {
+        return this.dataProcessor.isEcgRecording;
+    }
+
+    /** Recorded ECG samples */
+    get recordedEcgSamples(): Signal<number[]> {
+        return this.dataProcessor.recordedEcgSamples;
+    }
+
+    // --- Debug Log (proxying from logger) ---
+
+    /** Debug log entries */
+    get debugLog(): Signal<string[]> {
+        return this.logger.logEntries;
+    }
+
+    // --- Private Methods ---
+
+    /**
+     * Handle notification from device
+     */
+    private handleNotification(event: Event): void {
+        try {
+            const characteristic = (event.target as BluetoothRemoteGATTCharacteristic);
+            const dataView = characteristic.value;
+
+            if (!dataView) {
+                console.warn('Received empty notification');
+                return;
+            }
+
+            const data = new Uint8Array(dataView.buffer);
+
+            if (data.length === 0) return;
+
+            // Log the raw data for debugging
+            console.log(`Recibido datos RAW: ${this.logger.bufferToHex(data)} (${data.length} bytes)`);
+
+            // Send to data processor
+            this.dataProcessor.processNotification(data);
+        } catch (error) {
+            console.error('Error handling notification:', error);
+            this.logger.error('Error handling notification', error);
+        }
+    }
+
+    /**
+     * Setup sensor monitoring
+     */
+    private setupSensorMonitoring(): void {
+        this.clearSensorMonitoring();
+
+        // Check active sensors periodically and try to resubscribe if needed
+        this.sensorMonitorTimer = setInterval(() => {
+            if (!this.isConnected()) {
+                this.clearSensorMonitoring();
+                return;
+            }
+
+            const activeCount = this.dataProcessor.getActiveSensorCount();
+            console.log(`Active sensors: ${activeCount}`);
+
+            // If we have few active sensors, try the specific format commands
+            if (activeCount < 3) {
+                console.log('Few active sensors detected, trying specific format commands');
+                this.trySpecificFormat();
+            }
+
+        }, 10000); // Check every 10 seconds
+    }
+
+    /**
+     * Clear sensor monitoring
+     */
+    private clearSensorMonitoring(): void {
+        if (this.sensorMonitorTimer) {
+            clearInterval(this.sensorMonitorTimer);
+            this.sensorMonitorTimer = null;
+        }
+    }
+}
+---- src/app/core/services/movesense-data-processor.service.ts ----
+import { Injectable, signal, WritableSignal, computed } from '@angular/core';
+import {
+    AccelerometerData,
+    TemperatureData,
+    HeartRateData,
+    EcgData,
+    GyroscopeData,
+    MagnetometerData,
+    ImuData,
+    SensorStatus,
+    PostureState
+} from './models/movesense.model';
+import { MovesenseLoggerService } from './movesense-logger.service';
+
+
+
+/**
+ * Service for processing sensor data from Movesense device
+ */
+@Injectable({
+    providedIn: 'root',
+})
+export class MovesenseDataProcessorService {
+    // --- Sensor Data Signals ---
+    readonly temperatureData: WritableSignal<TemperatureData | null> = signal(null);
+    readonly accelerometerData: WritableSignal<AccelerometerData | null> = signal(null);
+    readonly heartRateData: WritableSignal<HeartRateData | null> = signal(null);
+    readonly ecgData: WritableSignal<EcgData | null> = signal(null);
+    readonly gyroscopeData: WritableSignal<GyroscopeData | null> = signal(null);
+    readonly magnetometerData: WritableSignal<MagnetometerData | null> = signal(null);
+
+    // --- Sensor Status ---
+    readonly temperatureStatus: WritableSignal<SensorStatus> = signal('inactive');
+    readonly accelerometerStatus: WritableSignal<SensorStatus> = signal('inactive');
+    readonly heartRateStatus: WritableSignal<SensorStatus> = signal('inactive');
+    readonly gyroscopeStatus: WritableSignal<SensorStatus> = signal('inactive');
+    readonly magnetometerStatus: WritableSignal<SensorStatus> = signal('inactive');
+    readonly ecgStatus: WritableSignal<SensorStatus> = signal('inactive');
+
+    // --- Calculated Metrics Signals ---
+    readonly steps = signal(0);
+    readonly distance = signal(0); // In meters
+    readonly posture = signal<PostureState>(PostureState.UNKNOWN);
+    readonly hrvRmssd = signal<number | null>(null); // HRV Root Mean Square of Successive Differences
+    readonly stressLevel = signal<number | null>(null); // 0-100 scale based on HRV
+    readonly dribbleCount = signal(0);
+    readonly caloriesBurned = signal(0); // Rough estimate
+    readonly fallDetected = signal(false); // Fall detection status
+    readonly lastFallTimestamp = signal<number | null>(null); // When the last fall was detected
+
+    // --- ECG Recording State ---
+    readonly isEcgRecording = signal(false);
+    readonly recordedEcgSamples = signal<number[]>([]); // Stores recorded raw samples
+
+    // --- Activity Tracking ---
+    private _rrHistory: number[] = []; // For HRV calculation
+    private _lastStepTimestamp = 0; // For step cadence calculation
+    private _gravity = { x: 0, y: 0, z: 0 }; // Estimated gravity vector
+    private _isFirstAccSample = true;
+    private _lastDribbleTimestamp = 0; // For dribble cadence calculation
+    private _activityStartTime = 0; // To track duration for calorie calc
+
+    // --- Data Monitoring ---
+    private _lastDataTimestamps: Record<string, number> = {}; // Track last data time for each sensor
+
+    constructor(private logger: MovesenseLoggerService) {
+        console.log('MovesenseDataProcessorService initialized');
+    }
+
+    /**
+     * Process notification data from device
+     */
+    processNotification(data: Uint8Array): void {
+        if (data.length < 1) return;
+
+        console.log(`Processing notification data: ${this.logger.bufferToHex(data)}`);
+
+        // Try to identify the sensor type by common patterns
+
+        // First, check typical 2-byte header patterns
+        if (data.length >= 2) {
+            const header = (data[0] << 8) | data[1];
+
+            // Recognized header patterns from the old code
+            if (header === 0x0162 || header === 0x0101) {
+                // Temperature data pattern
+                this.processTemperatureData(data.slice(2));
+                return;
+            } else if (header === 0x0c62 || header === 0x0c02) {
+                // Accelerometer data pattern
+                this.processAccelerometerData(data.slice(2));
+                return;
+            } else if (header === 0x0c63 || header === 0x0c03) {
+                // Heart rate data pattern
+                this.processHeartRateData(data.slice(2));
+                return;
+            } else if (header === 0x0c64 || header === 0x0c04) {
+                // Gyroscope data pattern
+                this.processGyroscopeData(data.slice(2));
+                return;
+            } else if (header === 0x0c65 || header === 0x0c05) {
+                // Magnetometer data pattern
+                this.processMagnetometerData(data.slice(2));
+                return;
+            } else if (header === 0x0163 || header === 0x0106) {
+                // ECG data pattern
+                this.processEcgData(data.slice(2));
+                return;
+            }
+        }
+
+        // Next, try to identify by the data size/content
+
+        // Temperature often has a small payload (1-2 bytes for the value)
+        if (data.length <= 4) {
+            const value = data.length >= 2 ?
+                new DataView(data.buffer).getInt16(0, true) / 100 :
+                data[0];
+
+            if (value >= 15 && value <= 45) { // Typical human temperature range
+                this.processTemperatureData(new Uint8Array([value]));
+                return;
+            }
+
+            // Heart rate is also small and in a specific range
+            if (value >= 40 && value <= 220) { // Typical human HR range
+                this.processHeartRateData(new Uint8Array([value]));
+                return;
+            }
+        }
+
+        // Accelerometer, gyroscope, magnetometer all have 3-axis data
+        if (data.length >= 6) {
+            // Try to parse as 3-axis data with 2-byte values
+            this.processUnknownThreeAxisData(data);
+            return;
+        }
+
+        // ECG data is typically larger
+        if (data.length > 20) {
+            this.processEcgData(data);
+            return;
+        }
+
+        console.log(`Unidentified data format: ${this.logger.bufferToHex(data)}`);
+    }
+
+    /**
+     * Process temperature data
+     */
+    processTemperatureData(data: Uint8Array): void {
+        try {
+            // Extract temperature value - support different formats
+            let temperature: number;
+
+            if (data.length >= 4) {
+                // Float format
+                temperature = new DataView(data.buffer).getFloat32(0, true);
+            } else if (data.length >= 2) {
+                // Int16 format (scale by 100)
+                temperature = new DataView(data.buffer).getInt16(0, true) / 100;
+            } else if (data.length >= 1) {
+                // Single byte format
+                temperature = data[0];
+            } else {
+                console.warn('Temperature data too short');
+                return;
+            }
+
+            // Apply sanity check
+            if (temperature < 10 || temperature > 50) {
+                console.warn(`Temperature value out of range: ${temperature}°C`);
+                return;
+            }
+
+            this.temperatureData.set({
+                timestamp: Date.now(),
+                measurement: temperature
+            });
+
+            this._lastDataTimestamps['temperature'] = Date.now();
+            this.temperatureStatus.set('active');
+
+            console.log(`Temperature: ${temperature.toFixed(1)}°C`);
+        } catch (error) {
+            console.error('Error processing temperature data:', error);
+            this.temperatureStatus.set('error');
+        }
+    }
+
+    /**
+     * Process accelerometer data
+     */
+    processAccelerometerData(data: Uint8Array): void {
+        try {
+            let x: number, y: number, z: number;
+
+            if (data.length >= 6) {
+                // 2-byte per axis format
+                const dataView = new DataView(data.buffer);
+                x = dataView.getInt16(0, true) / 1000; // Scale to G
+                y = dataView.getInt16(2, true) / 1000;
+                z = dataView.getInt16(4, true) / 1000;
+            } else if (data.length >= 3) {
+                // 1-byte per axis format
+                x = (data[0] - 128) / 16; // Scale and center
+                y = (data[1] - 128) / 16;
+                z = (data[2] - 128) / 16;
+            } else {
+                console.warn('Accelerometer data too short');
+                return;
+            }
+
+            // Process for step detection, etc.
+            this.processAccelSample(x, y, z);
+
+            const magnitude = Math.sqrt(x * x + y * y + z * z);
+
+            this.accelerometerData.set({
+                timestamp: Date.now(),
+                x, y, z,
+                magnitude,
+                samples: [{ x, y, z }]
+            });
+
+            this._lastDataTimestamps['accelerometer'] = Date.now();
+            this.accelerometerStatus.set('active');
+
+            console.log(`Accelerometer: [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]G, mag=${magnitude.toFixed(2)}G`);
+        } catch (error) {
+            console.error('Error processing accelerometer data:', error);
+            this.accelerometerStatus.set('error');
+        }
+    }
+
+    /**
+     * Process gyroscope data
+     */
+    processGyroscopeData(data: Uint8Array): void {
+        try {
+            let x: number, y: number, z: number;
+
+            if (data.length >= 6) {
+                // 2-byte per axis format
+                const dataView = new DataView(data.buffer);
+                x = dataView.getInt16(0, true) / 100; // Scale to deg/s
+                y = dataView.getInt16(2, true) / 100;
+                z = dataView.getInt16(4, true) / 100;
+            } else if (data.length >= 3) {
+                // 1-byte per axis format
+                x = data[0] - 128; // Scale and center
+                y = data[1] - 128;
+                z = data[2] - 128;
+            } else {
+                console.warn('Gyroscope data too short');
+                return;
+            }
+
+            this.gyroscopeData.set({
+                timestamp: Date.now(),
+                samples: [{ x, y, z }]
+            });
+
+            this._lastDataTimestamps['gyroscope'] = Date.now();
+            this.gyroscopeStatus.set('active');
+
+            console.log(`Gyroscope: [${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}]°/s`);
+        } catch (error) {
+            console.error('Error processing gyroscope data:', error);
+            this.gyroscopeStatus.set('error');
+        }
+    }
+
+    /**
+     * Process magnetometer data
+     */
+    processMagnetometerData(data: Uint8Array): void {
+        try {
+            let x: number, y: number, z: number;
+
+            if (data.length >= 6) {
+                // 2-byte per axis format
+                const dataView = new DataView(data.buffer);
+                x = dataView.getInt16(0, true) / 10; // Scale to µT
+                y = dataView.getInt16(2, true) / 10;
+                z = dataView.getInt16(4, true) / 10;
+            } else if (data.length >= 3) {
+                // 1-byte per axis format
+                x = (data[0] - 128) * 4; // Scale and center
+                y = (data[1] - 128) * 4;
+                z = (data[2] - 128) * 4;
+            } else {
+                console.warn('Magnetometer data too short');
+                return;
+            }
+
+            this.magnetometerData.set({
+                timestamp: Date.now(),
+                samples: [{ x, y, z }]
+            });
+
+            this._lastDataTimestamps['magnetometer'] = Date.now();
+            this.magnetometerStatus.set('active');
+
+            console.log(`Magnetometer: [${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}]µT`);
+        } catch (error) {
+            console.error('Error processing magnetometer data:', error);
+            this.magnetometerStatus.set('error');
+        }
+    }
+
+    /**
+     * Process heart rate data
+     */
+    processHeartRateData(data: Uint8Array): void {
+        try {
+            let heartRate: number;
+
+            if (data.length >= 2) {
+                // 2-byte format
+                heartRate = new DataView(data.buffer).getUint16(0, true);
+            } else if (data.length >= 1) {
+                // 1-byte format
+                heartRate = data[0];
+            } else {
+                console.warn('Heart rate data too short');
+                return;
+            }
+
+            // Apply sanity check
+            if (heartRate < 30 || heartRate > 240) {
+                console.warn(`Heart rate value out of range: ${heartRate} BPM`);
+                return;
+            }
+
+            this.heartRateData.set({
+                timestamp: Date.now(),
+                hr: heartRate
+            });
+
+            // Update derived metrics
+            this.updateCalories(heartRate);
+
+            this._lastDataTimestamps['heartrate'] = Date.now();
+            this.heartRateStatus.set('active');
+
+            console.log(`Heart Rate: ${heartRate} BPM`);
+        } catch (error) {
+            console.error('Error processing heart rate data:', error);
+            this.heartRateStatus.set('error');
+        }
+    }
+
+    /**
+     * Process ECG data
+     */
+    processEcgData(data: Uint8Array): void {
+        try {
+            const samples: number[] = [];
+
+            if (data.length >= 2) {
+                // Process as series of samples
+                for (let i = 0; i < Math.floor(data.length / 2); i++) {
+                    const offset = i * 2;
+                    if (offset + 1 < data.length) {
+                        const sample = new DataView(data.buffer).getInt16(offset, true);
+                        samples.push(sample);
+                    }
+                }
+            } else if (data.length >= 1) {
+                // Single sample
+                samples.push(data[0]);
+            } else {
+                console.warn('ECG data too short');
+                return;
+            }
+
+            if (samples.length === 0) return;
+
+            this.ecgData.set({
+                timestamp: Date.now(),
+                samples
+            });
+
+            // If recording is active, add these samples
+            if (this.isEcgRecording()) {
+                this.recordedEcgSamples.update(existing => [...existing, ...samples]);
+            }
+
+            this._lastDataTimestamps['ecg'] = Date.now();
+            this.ecgStatus.set('active');
+
+            console.log(`ECG: ${samples.length} samples`);
+        } catch (error) {
+            console.error('Error processing ECG data:', error);
+            this.ecgStatus.set('error');
+        }
+    }
+
+    /**
+     * Process unknown three-axis data
+     */
+    processUnknownThreeAxisData(data: Uint8Array): void {
+        try {
+            let x: number, y: number, z: number;
+
+            if (data.length >= 6) {
+                // 2-byte per axis format
+                const dataView = new DataView(data.buffer);
+                x = dataView.getInt16(0, true) / 1000; // Scale factor
+                y = dataView.getInt16(2, true) / 1000;
+                z = dataView.getInt16(4, true) / 1000;
+            } else if (data.length >= 3) {
+                // 1-byte per axis format
+                x = (data[0] - 128) / 16; // Scale and center
+                y = (data[1] - 128) / 16;
+                z = (data[2] - 128) / 16;
+            } else {
+                return; // Not enough data
+            }
+
+            // Determine which sensor by magnitude
+            const magnitude = Math.sqrt(x * x + y * y + z * z);
+
+            if (magnitude < 20) {
+                // Likely accelerometer (G range typically < 16G)
+                this.accelerometerData.set({
+                    timestamp: Date.now(),
+                    x, y, z,
+                    magnitude
+                });
+
+                // Process for features
+                this.processAccelSample(x, y, z);
+
+                this.accelerometerStatus.set('active');
+                this._lastDataTimestamps['accelerometer'] = Date.now();
+                console.log(`Identified as accelerometer: [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]G`);
+            } else if (magnitude < 1000) {
+                // Likely gyroscope (deg/s range typically < 1000)
+                this.gyroscopeData.set({
+                    timestamp: Date.now(),
+                    samples: [{ x, y, z }]
+                });
+                this.gyroscopeStatus.set('active');
+                this._lastDataTimestamps['gyroscope'] = Date.now();
+                console.log(`Identified as gyroscope: [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]°/s`);
+            } else {
+                // Likely magnetometer (can have larger values)
+                this.magnetometerData.set({
+                    timestamp: Date.now(),
+                    samples: [{ x, y, z }]
+                });
+                this.magnetometerStatus.set('active');
+                this._lastDataTimestamps['magnetometer'] = Date.now();
+                console.log(`Identified as magnetometer: [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]µT`);
+            }
+        } catch (error) {
+            console.error('Error processing unknown three-axis data:', error);
+        }
+    }
+
+    /**
+     * Process acceleration sample for step detection and posture
+     */
+    private processAccelSample(x: number, y: number, z: number): void {
+        // Update gravity vector using a simple low-pass filter
+        if (this._isFirstAccSample) {
+            this._gravity = { x, y, z };
+            this._isFirstAccSample = false;
+        } else {
+            // Low-pass filter with alpha = 0.1
+            const alpha = 0.1;
+            this._gravity.x = this._gravity.x * (1 - alpha) + x * alpha;
+            this._gravity.y = this._gravity.y * (1 - alpha) + y * alpha;
+            this._gravity.z = this._gravity.z * (1 - alpha) + z * alpha;
+        }
+
+        // Remove gravity component to get linear acceleration
+        const linearAccX = x - this._gravity.x;
+        const linearAccY = y - this._gravity.y;
+        const linearAccZ = z - this._gravity.z;
+
+        // Calculate magnitude of linear acceleration
+        const magnitude = Math.sqrt(
+            Math.pow(linearAccX, 2) +
+            Math.pow(linearAccY, 2) +
+            Math.pow(linearAccZ, 2)
+        );
+
+        // Get current time for timing calculations
+        const now = Date.now();
+
+        // ---- Step detection ----
+        const stepThreshold = 0.5; // G force threshold for step
+        const stepCooldown = 350; // Minimum time between steps (ms)
+
+        if (magnitude > stepThreshold && (now - this._lastStepTimestamp) > stepCooldown) {
+            this._lastStepTimestamp = now;
+            this.steps.update(steps => steps + 1);
+
+            // Update distance (assuming 0.7m stride length - can be personalized)
+            this.distance.update(distance => distance + 0.7);
+            console.log(`Step detected - total: ${this.steps()}, distance: ${this.distance().toFixed(1)}m`);
+        }
+
+        // ---- Basketball dribble detection ----
+        const dribbleThreshold = 1.8; // Higher threshold for dribble
+        const dribbleCooldown = 150; // Shorter cooldown for faster dribble rate
+
+        if (magnitude > dribbleThreshold && (now - this._lastDribbleTimestamp) > dribbleCooldown) {
+            this._lastDribbleTimestamp = now;
+            this.dribbleCount.update(count => count + 1);
+            console.log(`Dribble detected - total: ${this.dribbleCount()}`);
+        }
+
+        // ---- Posture detection ----
+        const verticalAngle = Math.atan2(
+            Math.sqrt(this._gravity.x * this._gravity.x + this._gravity.y * this._gravity.y),
+            this._gravity.z
+        ) * (180 / Math.PI);
+
+        const newPosture = verticalAngle < 30
+            ? PostureState.STANDING
+            : verticalAngle < 75
+                ? PostureState.STOOPED
+                : PostureState.LYING;
+
+        if (this.posture() !== newPosture) {
+            console.log(`Posture changed to ${newPosture}, angle: ${verticalAngle.toFixed(1)}°`);
+        }
+
+        this.posture.set(newPosture);
+
+        // ---- Fall detection ----
+        const fallThreshold = 2.5; // G force
+        const fallWindow = 1000; // ms
+
+        if (magnitude > fallThreshold) {
+            const currentTime = Date.now();
+            console.log(`Possible fall detected! Magnitude: ${magnitude.toFixed(2)}G`);
+            this.fallDetected.set(true);
+            this.lastFallTimestamp.set(currentTime);
+
+            // Reset fall detection after a delay
+            setTimeout(() => {
+                if (this.lastFallTimestamp() === currentTime) {
+                    this.fallDetected.set(false);
+                }
+            }, fallWindow);
+        }
+    }
+
+    /**
+     * Update calorie burn estimate based on heart rate
+     */
+    private updateCalories(heartRate: number): void {
+        // Skip if no heart rate or invalid
+        if (!heartRate || heartRate < 40 || heartRate > 240) return;
+
+        // Initialize activity start time if needed
+        if (this._activityStartTime === 0) {
+            this._activityStartTime = Date.now();
+        }
+
+        // Get activity duration in hours
+        const activityDurationHours = (Date.now() - this._activityStartTime) / 3600000;
+
+        // Simple calories burned calculation using heart rate
+        // Default values (can be personalized)
+        const weight = 70; // kg
+        const age = 30;
+        const isMale = true;
+
+        // Keytel formula constants
+        const gender = isMale ? 1 : 0;
+
+        // Calories per minute
+        const caloriesPerMinute = ((-55.0969 + (0.6309 * heartRate) + (0.1988 * weight) + (0.2017 * age)) / 4.184) * (gender ? 1 : 0.85);
+
+        // Total calories
+        const totalCalories = caloriesPerMinute * (activityDurationHours * 60);
+
+        // Update the calorie signal
+        this.caloriesBurned.set(Math.round(totalCalories));
+        console.log(`Calories updated: ${Math.round(totalCalories)} kcal (duration: ${(activityDurationHours * 60).toFixed(1)} min)`);
+    }
+
+    /**
+     * Start recording ECG data
+     */
+    startEcgRecording(): void {
+        this.recordedEcgSamples.set([]); // Clear previous recording
+        this.isEcgRecording.set(true);
+        console.log('Started ECG Recording');
+    }
+
+    /**
+     * Stop recording ECG data
+     */
+    stopEcgRecording(): void {
+        if (!this.isEcgRecording()) return;
+        this.isEcgRecording.set(false);
+        console.log(`Stopped ECG Recording. Samples recorded: ${this.recordedEcgSamples().length}`);
+    }
+
+    /**
+     * Get current sensor status as an object
+     */
+    getSensorStatus(): Record<string, SensorStatus> {
+        return {
+            temperature: this.temperatureStatus(),
+            accelerometer: this.accelerometerStatus(),
+            heartRate: this.heartRateStatus(),
+            gyroscope: this.gyroscopeStatus(),
+            magnetometer: this.magnetometerStatus(),
+            ecg: this.ecgStatus()
+        };
+    }
+
+    /**
+     * Get active sensor count
+     */
+    getActiveSensorCount(): number {
+        const statuses = this.getSensorStatus();
+        return Object.values(statuses).filter(status => status === 'active').length;
+    }
+
+    /**
+     * Update sensor start time for calorie counting
+     */
+    startActivity(): void {
+        this._activityStartTime = Date.now();
+        console.log('Activity timing started');
+    }
+
+    /**
+     * Reset service state
+     */
+    resetState(): void {
+        // Reset all sensor data
+        this.temperatureData.set(null);
+        this.accelerometerData.set(null);
+        this.heartRateData.set(null);
+        this.ecgData.set(null);
+        this.gyroscopeData.set(null);
+        this.magnetometerData.set(null);
+
+        // Reset calculated metrics
+        this.steps.set(0);
+        this.distance.set(0);
+        this.posture.set(PostureState.UNKNOWN);
+        this.hrvRmssd.set(null);
+        this.stressLevel.set(null);
+        this._rrHistory = [];
+        this._lastStepTimestamp = 0;
+        this._gravity = { x: 0, y: 0, z: 0 };
+        this._isFirstAccSample = true;
+        this.dribbleCount.set(0);
+        this._lastDribbleTimestamp = 0;
+        this.caloriesBurned.set(0);
+        this._activityStartTime = 0;
+
+        // Reset sensor status
+        this.temperatureStatus.set('inactive');
+        this.accelerometerStatus.set('inactive');
+        this.heartRateStatus.set('inactive');
+        this.gyroscopeStatus.set('inactive');
+        this.magnetometerStatus.set('inactive');
+        this.ecgStatus.set('inactive');
+
+        // Clear ECG recording
+        this.isEcgRecording.set(false);
+        this.recordedEcgSamples.set([]);
+
+        // Reset fall detection
+        this.fallDetected.set(false);
+        this.lastFallTimestamp.set(null);
+
+        // Clear timestamp tracking
+        this._lastDataTimestamps = {};
+
+        console.log('Data processor state reset');
+    }
+}
+---- src/app/app.component.scss ----
+// Basic layout styles for AppComponent
+
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh; // Ensure app takes full viewport height
+  font-family: sans-serif; // Consistent base font
+}
+
+.app-header {
+  background-color: #3f51b5; // Example header color (Indigo)
+  color: white;
+  padding: 1rem 1.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+  h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: normal;
+  }
+}
+
+.app-main {
+  flex-grow: 1; // Allow main content to fill available space
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column; // Stack connection and sensor data
+  gap: 1.5rem; // Space between connection component and data area
+}
+
+// Container for all sensor display components
+.sensor-data-area {
+  display: grid;
+  // Adjust grid columns based on chart sizes and desired layout
+  // This example tries to fit charts (700px wide) and smaller displays
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(300px, 1fr)
+  ); // Basic responsive grid
+  gap: 1.5rem; // Gap between grid items
+  padding-top: 1rem; // Add some space above the sensor grid
+
+  // Remove placeholder styles if they existed
+  // border: none;
+  // min-height: auto;
+  // align-items: initial;
+  // justify-content: initial;
+  // color: initial;
+  // font-style: initial;
+  // &::before { content: none; }
+}
+
+.app-footer {
+  background-color: #f5f5f5; // Light grey footer
+  color: #666;
+  padding: 1rem 1.5rem;
+  text-align: center;
+  font-size: 0.9rem;
+  margin-top: auto; // Push footer to the bottom
+}
+
+// Hide router outlet if not used
+router-outlet:empty {
+  display: none;
+}
+
+---- src/app/app.routes.ts ----
+import { Routes } from '@angular/router';
+
+export const routes: Routes = [];
+
+---- src/app/app.component.spec.ts ----
+import { TestBed } from '@angular/core/testing';
+import { AppComponent } from './app.component';
+
+describe('AppComponent', () => {
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [AppComponent],
+    }).compileComponents();
+  });
+
+  it('should create the app', () => {
+    const fixture = TestBed.createComponent(AppComponent);
+    const app = fixture.componentInstance;
+    expect(app).toBeTruthy();
+  });
+
+  it(`should have the 'nvdo-update' title`, () => {
+    const fixture = TestBed.createComponent(AppComponent);
+    const app = fixture.componentInstance;
+    expect(app.title).toEqual('nvdo-update');
+  });
+
+  it('should render title', () => {
+    const fixture = TestBed.createComponent(AppComponent);
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('h1')?.textContent).toContain('Hello, nvdo-update');
+  });
+});
+
+---- src/app/features/ecg-chart/ecg-chart.component.ts ----
+import { Component, inject, ChangeDetectionStrategy, signal, WritableSignal, computed, Signal, effect } from '@angular/core';
+import { NgxChartsModule, ScaleType } from '@swimlane/ngx-charts'; // Import the module
+
+import { ChartData, ChartSeriesData } from '../hr-chart/hr-chart.component'; // Reuse chart interfaces
+import { EcgData } from '../../core/services/models/movesense.model';
+import { MovesenseService } from '../../core/services/movesense.service';
+
+const MAX_ECG_DATA_POINTS = 500; // Keep a larger history for ECG, adjust as needed for performance
+
+@Component({
+    selector: 'app-ecg-chart',
+    templateUrl: './ecg-chart.component.html',
+    styleUrls: ['./ecg-chart.component.scss'],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    imports: [NgxChartsModule], // Import the module for standalone components
+    // standalone: true is default
+})
+export class EcgChartComponent {
+    private readonly movesenseService = inject(MovesenseService);
+
+    // --- Chart Data Signal ---
+    // Holds data for the ECG signal
+    readonly chartData: WritableSignal<ChartData[]> = signal([
+        { name: 'ECG', series: [] }
+    ]);
+
+    // --- Chart Configuration ---
+    readonly view: [number, number] = [700, 300]; // Chart dimensions
+    readonly legend: boolean = false; // No legend needed for single series
+    readonly showXAxisLabel: boolean = true;
+    readonly showYAxisLabel: boolean = true;
+    readonly xAxisLabel: string = 'Time';
+    readonly yAxisLabel: string = 'ECG (mV)'; // Assuming units, adjust based on actual data
+    readonly timeline: boolean = true;
+    readonly colorScheme = { // Example color scheme for ECG
+        name: 'ecgScheme',
+        selectable: true,
+        group: ScaleType.Ordinal,
+        domain: ['#00BCD4'] // Cyan color for ECG
+    };
+    // Consider disabling autoScale if the range is relatively fixed or jumps too much
+    readonly autoScale = true;
+
+    // Expose connection status and recording status
+    readonly isConnected: Signal<boolean> = this.movesenseService.isConnected;
+    readonly isRecording: Signal<boolean> = this.movesenseService.isEcgRecording;
+
+    constructor() {
+        // Effect to update chart when new ECG data arrives
+        // Note: ECG data likely arrives in batches (multiple samples per notification)
+        effect(() => {
+            const newEcgData = this.movesenseService.ecgData(); // Get latest ECG data object
+            if (newEcgData && this.isConnected() && newEcgData.samples.length > 0) {
+                this.updateChart(newEcgData);
+            }
+        }, { allowSignalWrites: true });
+
+        // Effect to clear chart data when disconnected
+        effect(() => {
+            if (!this.isConnected()) {
+                this.chartData.set([{ name: 'ECG', series: [] }]);
+            }
+        });
+    }
+
+    // This needs careful implementation based on how timestamps relate to samples
+    private updateChart(newData: EcgData): void {
+        this.chartData.update(currentChartData => {
+            const currentSeries = currentChartData[0].series;
+            const newPoints: ChartSeriesData[] = [];
+
+            // ASSUMPTION: Timestamp applies to the FIRST sample in the batch.
+            // We need to estimate timestamps for subsequent samples based on sample rate (e.g., 128Hz).
+            const sampleRateHz = 128; // Example rate - THIS MUST BE KNOWN/CONFIGURABLE
+            const timePerSampleMs = 1000 / sampleRateHz;
+            let currentTimestampMs = newData.timestamp; // Assuming timestamp is milliseconds epoch
+
+            for (const sample of newData.samples) {
+                newPoints.push({
+                    name: new Date(currentTimestampMs),
+                    value: sample // Assuming the sample value is directly usable (e.g., mV)
+                });
+                currentTimestampMs += timePerSampleMs; // Increment timestamp for next sample
+            }
+
+            // Add new data points and limit history length
+            const updatedSeries = [...currentSeries, ...newPoints].slice(-MAX_ECG_DATA_POINTS);
+
+            return [{ name: 'ECG', series: updatedSeries }];
+        });
+    }
+
+    // Optional: Custom date formatting for x-axis ticks
+    xAxisTickFormatting(val: string | Date): string {
+        if (val instanceof Date) {
+            // Show milliseconds for ECG precision
+            return val.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
+        }
+        return String(val);
+    }
+
+    // --- Recording Control Methods ---
+    startRecording(): void {
+        this.movesenseService.startEcgRecording();
+    }
+
+    stopRecording(): void {
+        this.movesenseService.stopEcgRecording();
+    }
+}
+---- src/app/features/ecg-chart/ecg-chart.component.html ----
+<div class="ecg-chart">
+  <div class="ecg-chart__header">
+    <h3 class="ecg-chart__title">ECG (mV)</h3>
+    @if(isConnected()) {
+      <div class="ecg-chart__controls">
+        @if (isRecording()) {
+          <button class="ecg-chart__button ecg-chart__button--stop" (click)="stopRecording()">Stop Recording</button>
+        } @else {
+          <button class="ecg-chart__button ecg-chart__button--start" (click)="startRecording()">Start Recording</button>
+        }
+      </div>
+    }
+  </div>
+  @if (isConnected()) {
+    @if (chartData()[0].series.length > 0) {
+      <ngx-charts-line-chart
+        class="ecg-chart__chart-container"
+        [view]="view"
+        [scheme]="colorScheme"
+        [results]="chartData()"
+        [legend]="legend"
+        [xAxis]="true"
+        [yAxis]="true"
+        [showXAxisLabel]="showXAxisLabel"
+        [showYAxisLabel]="showYAxisLabel"
+        [xAxisLabel]="xAxisLabel"
+        [yAxisLabel]="yAxisLabel"
+        [timeline]="timeline"
+        [autoScale]="autoScale"
+        [xAxisTickFormatting]="xAxisTickFormatting">
+      </ngx-charts-line-chart>
+    } @else {
+      <div class="ecg-chart__nodata">Waiting for ECG data...</div>
+    }
+  } @else {
+    <div class="ecg-chart__disconnected">Connect device to see chart</div>
+  }
+</div>
+---- src/app/features/ecg-chart/ecg-chart.component.scss ----
+// Inherit most styles from hr-chart for consistency
+@use "../hr-chart/hr-chart.component.scss" as hr-styles;
+
+.ecg-chart {
+  @extend .hr-chart; // Extend base styles
+
+  &__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%; // Make header take full width
+    margin-bottom: 0.5rem; // Adjust spacing
+  }
+
+  &__title {
+    @extend .hr-chart__title; // Extend title style
+    margin-bottom: 0; // Remove bottom margin from title itself
+  }
+
+  &__controls {
+    // Styles for the button container
+  }
+
+  &__button {
+    padding: 0.4rem 0.8rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background-color 0.2s ease;
+    color: white;
+
+    &--start {
+      background-color: #4caf50; // Green
+      &:hover {
+        background-color: #45a049;
+      }
+    }
+
+    &--stop {
+      background-color: #f44336; // Red
+      &:hover {
+        background-color: #e53935;
+      }
+    }
+  }
+
+  &__chart-container {
+    @extend .hr-chart__chart-container; // Extend chart container style
+  }
+
+  &__nodata {
+    @extend .hr-chart__nodata; // Extend nodata message style
+  }
+
+  &__disconnected {
+    @extend .hr-chart__disconnected; // Extend disconnected message style
+  }
+
+  // Specific overrides for ecg-chart can go here if needed
+}
+
+---- src/app/features/hr-chart/hr-chart.component.html ----
+<div class="hr-chart">
+  <h3 class="hr-chart__title">Heart Rate (BPM)</h3>
+  @if (isConnected()) {
+    @if (chartData()[0].series.length > 0) {
+      <ngx-charts-line-chart
+        class="hr-chart__chart-container"
+        [view]="view"
+        [scheme]="colorScheme"
+        [results]="chartData()"
+        [legend]="legend"
+        [xAxis]="true"
+        [yAxis]="true"
+        [showXAxisLabel]="showXAxisLabel"
+        [showYAxisLabel]="showYAxisLabel"
+        [xAxisLabel]="xAxisLabel"
+        [yAxisLabel]="yAxisLabel"
+        [timeline]="timeline"
+        [autoScale]="autoScale"
+        [xAxisTickFormatting]="xAxisTickFormatting">
+      </ngx-charts-line-chart>
+    } @else {
+      <div class="hr-chart__nodata">Waiting for HR data...</div>
+    }
+  } @else {
+    <div class="hr-chart__disconnected">Connect device to see chart</div>
+  }
+</div>
+---- src/app/features/hr-chart/hr-chart.component.scss ----
+.hr-chart {
+  padding: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background-color: #fff;
+  display: flex; // Use flexbox for layout
+  flex-direction: column; // Stack title and chart vertically
+  align-items: center; // Center title and chart container
+
+  &__title {
+    margin-top: 0;
+    margin-bottom: 1rem; // Space between title and chart
+    font-size: 1rem;
+    font-weight: bold;
+    color: #555;
+    align-self: flex-start; // Align title to the left
+  }
+
+  &__chart-container {
+    width: 100%; // Make chart container take full width
+    height: 300px; // Explicit height for the chart
+  }
+
+  &__nodata,
+  &__disconnected {
+    font-size: 0.9rem;
+    color: #aaa;
+    font-style: italic;
+    padding: 1rem 0;
+    text-align: center;
+    width: 100%; // Ensure message takes full width
+    min-height: 100px; // Give some space for the message
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  // Style ngx-charts elements if needed (use ::ng-deep carefully)
+  // Example: Targeting axis labels
+  // ::ng-deep .ngx-charts .axis-label {
+  //   fill: #666;
+  // }
+}
+
+---- src/app/features/hr-chart/hr-chart.component.ts ----
+import { Component, inject, ChangeDetectionStrategy, signal, WritableSignal, computed, Signal, effect } from '@angular/core';
+import { NgxChartsModule, ScaleType } from '@swimlane/ngx-charts'; // Import the module
+import { MovesenseService } from '../../core/services/movesense.service';
+import { HeartRateData } from '../../core/services/models/movesense.model';
+
+// Interface for ngx-charts data format
+export interface ChartData {
+    name: string; // Series name (e.g., 'Heart Rate')
+    series: ChartSeriesData[];
+}
+
+export interface ChartSeriesData {
+    name: string | Date; // Timestamp (using Date for x-axis)
+    value: number; // HR value
+}
+
+const MAX_DATA_POINTS = 60; // Keep the last 60 HR readings
+
+@Component({
+    selector: 'app-hr-chart',
+    templateUrl: './hr-chart.component.html',
+    styleUrls: ['./hr-chart.component.scss'],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    imports: [NgxChartsModule], // Import the module for standalone components
+    // standalone: true is default
+})
+export class HrChartComponent {
+    private readonly movesenseService = inject(MovesenseService);
+
+    // --- Chart Data Signal ---
+    // Holds the data formatted for ngx-charts
+    readonly chartData: WritableSignal<ChartData[]> = signal([{ name: 'Heart Rate', series: [] }]);
+
+    // --- Chart Configuration ---
+    readonly view: [number, number] = [700, 300]; // Chart dimensions [width, height]
+    readonly legend: boolean = false;
+    readonly showXAxisLabel: boolean = true;
+    readonly showYAxisLabel: boolean = true;
+    readonly xAxisLabel: string = 'Time';
+    readonly yAxisLabel: string = 'Heart Rate (BPM)';
+    readonly timeline: boolean = true; // Enable timeline view for time-series data
+    readonly colorScheme = { // Example color scheme
+        name: 'hrScheme',
+        selectable: true,
+        group: ScaleType.Ordinal,
+        domain: ['#E44D25'] // Reddish color for HR
+    };
+    readonly autoScale = true; // Automatically adjust y-axis scale
+
+    // Expose connection status
+    readonly isConnected: Signal<boolean> = this.movesenseService.isConnected;
+
+    constructor() {
+        // Effect to update chart data when new HR data arrives from the service
+        effect(() => {
+            const newHrData = this.movesenseService.heartRateData(); // Get latest HR data point
+            if (newHrData && this.isConnected()) {
+                this.updateChart(newHrData);
+            }
+        }, { allowSignalWrites: true }); // Allow writing to chartData signal inside effect
+
+        // Effect to clear chart data when disconnected
+        effect(() => {
+            if (!this.isConnected()) {
+                this.chartData.set([{ name: 'Heart Rate', series: [] }]);
+            }
+        });
+    }
+
+    private updateChart(newData: HeartRateData): void {
+        this.chartData.update(currentChartData => {
+            const series = currentChartData[0].series;
+            const newPoint: ChartSeriesData = {
+                name: new Date(newData.timestamp), // Use Date object for time axis
+                value: newData.hr
+            };
+
+            // Add new data point and limit history length
+            const updatedSeries = [...series, newPoint].slice(-MAX_DATA_POINTS);
+
+            return [{ name: 'Heart Rate', series: updatedSeries }];
+        });
+    }
+
+    // Optional: Custom date formatting for x-axis ticks
+    xAxisTickFormatting(val: string | Date): string {
+        if (val instanceof Date) {
+            return val.toLocaleTimeString(); // Format as HH:MM:SS
+        }
+        return String(val);
+    }
+}
+---- src/app/features/connection/connection.component.ts ----
+import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
+import { MovesenseService } from '../../core/services/movesense.service';
+
+@Component({
+    selector: 'app-connection',
+    templateUrl: './connection.component.html',
+    styleUrls: ['./connection.component.scss'],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    // standalone: true is default in Angular 19+ schematics, but explicit for clarity if needed
+})
+export class ConnectionComponent {
+    private readonly movesenseService = inject(MovesenseService);
+
+    // Expose signals directly from the service
+    readonly isConnected = this.movesenseService.isConnected;
+    readonly deviceName = this.movesenseService.deviceName;
+    readonly connectionError = this.movesenseService.connectionError;
+
+    connect(): void {
+        // No need for async/await here, the service handles it
+        this.movesenseService.connect();
+    }
+
+    disconnect(): void {
+        this.movesenseService.disconnect();
+    }
+}
+---- src/app/features/connection/connection.component.scss ----
+.connection {
+  padding: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  background-color: #f9f9f9;
+  font-family: sans-serif; // Basic font
+
+  &__title {
+    margin-top: 0;
+    margin-bottom: 0.75rem;
+    font-size: 1.25rem;
+    color: #333;
+  }
+
+  &__status {
+    padding: 0.5rem;
+    margin-bottom: 0.75rem;
+    border-radius: 3px;
+    font-weight: bold;
+
+    &--connected {
+      background-color: #e8f5e9; // Light green
+      color: #2e7d32; // Dark green
+      border: 1px solid #a5d6a7;
+    }
+
+    &--disconnected {
+      background-color: #fff3e0; // Light orange
+      color: #ef6c00; // Dark orange
+      border: 1px solid #ffcc80;
+    }
+
+    &--error {
+      background-color: #ffebee; // Light red
+      color: #c62828; // Dark red
+      border: 1px solid #ef9a9a;
+    }
+  }
+
+  &__button {
+    padding: 0.6rem 1rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background-color 0.2s ease;
+
+    &--connect {
+      background-color: #007bff; // Blue
+      color: white;
+
+      &:hover:not(:disabled) {
+        background-color: #0056b3;
+      }
+
+      &:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+    }
+
+    &--disconnect {
+      background-color: #dc3545; // Red
+      color: white;
+
+      &:hover {
+        background-color: #c82333;
+      }
+    }
+  }
+}
+
+---- src/app/features/connection/connection.component.html ----
+<div class="connection">
+  <h2 class="connection__title">Movesense Connection</h2>
+
+  @if (connectionError(); as error) {
+    <div class="connection__status connection__status--error">
+      Error: {{ error }}
+    </div>
+  }
+
+  @if (isConnected()) {
+    <div class="connection__status connection__status--connected">
+      Connected to: {{ deviceName() || 'Movesense Device' }}
+    </div>
+    <button class="connection__button connection__button--disconnect" (click)="disconnect()">
+      Disconnect
+    </button>
+  } @else {
+    <div class="connection__status connection__status--disconnected">
+      Disconnected
+    </div>
+    <button class="connection__button connection__button--connect" (click)="connect()" [disabled]="isConnected()">
+      Connect to Movesense
+    </button>
+  }
+</div>
+---- src/app/features/metrics-display/metrics-display.component.html ----
+<div class="metrics-display">
+  <h3 class="metrics-display__title">Calculated Metrics</h3>
+  @if (isConnected()) {
+    <div class="metrics-display__grid">
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Steps:</span>
+        <span class="metrics-display__value">{{ steps() }}</span>
+      </div>
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Distance:</span>
+        <span class="metrics-display__value">{{ distance() | number:'1.0-1' }} m</span>
+      </div>
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Posture:</span>
+        <span class="metrics-display__value metrics-display__value--posture-{{posture()}}">{{ posture() }}</span>
+      </div>
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">HRV (RMSSD):</span>
+        <span class="metrics-display__value">{{ hrvRmssd() ?? 'N/A' }} ms</span>
+      </div>
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Stress Level:</span>
+        @if (stressLevel() !== null) {
+          <span class="metrics-display__value">{{ stressLevel() }} %</span>
+          <!-- Optional: Add a simple visual indicator -->
+          <div class="metrics-display__stress-bar">
+            <div class="metrics-display__stress-fill" [style.width.%]="stressLevel()"></div>
+          </div>
+        } @else {
+          <span class="metrics-display__value">N/A</span>
+        }
+      </div>
+      
+      <!-- Fall Detection Status - Added -->
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Fall Detected:</span>
+        <span class="metrics-display__value" [class.metrics-display__value--alert]="fallDetected()">
+          {{ fallDetected() ? 'YES - ALERT!' : 'No' }}
+        </span>
+      </div>
+      <!-- Last Fall Timestamp - Added -->
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Last Fall:</span>
+        <span class="metrics-display__value">{{ formatFallTime(lastFallTimestamp()) }}</span>
+      </div>
+      
+      <!-- Activity metrics -->
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Dribbles:</span>
+        <span class="metrics-display__value">{{ dribbleCount() }}</span>
+      </div>
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Calories (Est.):</span>
+        <span class="metrics-display__value">{{ caloriesBurned() }} kcal</span>
+      </div>
+    </div>
+  } @else {
+    <div class="metrics-display__disconnected">Connect device to see metrics</div>
+  }
+</div>
+---- src/app/features/metrics-display/metrics-display.component.scss ----
+.metrics-display {
+  padding: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background-color: #fff;
+
+  &__title {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1rem;
+    font-weight: bold;
+    color: #555;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(150px, 1fr)
+    ); // Responsive grid
+    gap: 0.75rem 1rem; // Row and column gap
+  }
+
+  &__item {
+    display: flex;
+    flex-direction: column; // Stack label and value
+    align-items: flex-start; // Align items left
+  }
+
+  &__label {
+    font-size: 0.8rem;
+    color: #777;
+    margin-bottom: 0.15rem;
+  }
+
+  &__value {
+    font-size: 1.2rem;
+    font-weight: 500;
+    color: #333;
+
+    // Specific styling for posture
+    &--posture-standing {
+      color: #4caf50;
+    } // Green
+    &--posture-stooped {
+      color: #ff9800;
+    } // Orange
+    &--posture-lying {
+      color: #2196f3;
+    } // Blue
+    &--posture-unknown {
+      color: #9e9e9e;
+    } // Grey
+  }
+
+  &__stress-bar {
+    width: 100%;
+    height: 8px;
+    background-color: #eee;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 0.25rem;
+  }
+
+  &__stress-fill {
+    height: 100%;
+    background-color: #f44336; // Red for stress
+    border-radius: 4px 0 0 4px; // Keep left radius
+    transition: width 0.3s ease-in-out;
+  }
+
+  &__disconnected {
+    font-size: 0.9rem;
+    color: #aaa;
+    font-style: italic;
+    padding: 1rem 0;
+    text-align: center;
+  }
+}
+
+---- src/app/features/metrics-display/metrics-display.component.ts ----
+import { Component, inject, ChangeDetectionStrategy, Signal } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
+import { MovesenseService } from '../../core/services/movesense.service';
+
+@Component({
+    selector: 'app-metrics-display',
+    templateUrl: './metrics-display.component.html',
+    styleUrls: ['./metrics-display.component.scss'],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    imports: [DecimalPipe] // Import DecimalPipe for formatting
+})
+export class MetricsDisplayComponent {
+    private readonly movesenseService = inject(MovesenseService);
+
+    // Expose calculated metric signals from the service
+    readonly steps: Signal<number> = this.movesenseService.steps;
+    readonly distance: Signal<number> = this.movesenseService.distance;
+    readonly posture: Signal<string> = this.movesenseService.posture;
+    readonly hrvRmssd: Signal<number | null> = this.movesenseService.hrvRmssd;
+    readonly stressLevel: Signal<number | null> = this.movesenseService.stressLevel;
+    readonly dribbleCount: Signal<number> = this.movesenseService.dribbleCount;
+    readonly caloriesBurned: Signal<number> = this.movesenseService.caloriesBurned;
+    readonly fallDetected: Signal<boolean> = this.movesenseService.fallDetected; // Added fall detection
+    readonly lastFallTimestamp: Signal<number | null> = this.movesenseService.lastFallTimestamp; // Added timestamp
+    readonly isConnected: Signal<boolean> = this.movesenseService.isConnected;
+
+    // Helper method for fall timestamp formatting
+    formatFallTime(timestamp: number | null): string {
+        if (timestamp === null) return 'None detected';
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString();
+    }
+}
+---- src/app/features/temperature-display/temperature-display.component.ts ----
+import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
+import { AsyncPipe, DecimalPipe, DatePipe } from '@angular/common'; // Import necessary pipes
+import { MovesenseService } from '../../core/services/movesense.service';
+import { Signal } from '@angular/core'; // Import Signal type
+import { TemperatureData } from '../../core/services/models/movesense.model';
+
+@Component({
+    selector: 'app-temperature-display',
+    templateUrl: './temperature-display.component.html',
+    styleUrls: ['./temperature-display.component.scss'],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    imports: [AsyncPipe, DecimalPipe, DatePipe], // Add pipes to imports for standalone component
+    // standalone: true is default
+})
+export class TemperatureDisplayComponent {
+    private readonly movesenseService = inject(MovesenseService);
+
+    // Expose the signal directly from the service
+    readonly temperatureData: Signal<TemperatureData | null> = this.movesenseService.temperatureData;
+    readonly isConnected: Signal<boolean> = this.movesenseService.isConnected;
+}
+---- src/app/features/temperature-display/temperature-display.component.scss ----
+.temperature-display {
+  padding: 1rem;
+  border: 1px solid #e0e0e0; // Lighter border
+  border-radius: 4px;
+  background-color: #fff;
+  text-align: center;
+  min-width: 150px; // Ensure some minimum width
+
+  &__title {
+    margin-top: 0;
+    margin-bottom: 0.75rem;
+    font-size: 1rem;
+    font-weight: bold;
+    color: #555;
+  }
+
+  &__value {
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: #3f51b5; // Use theme color
+    margin-bottom: 0.25rem;
+  }
+
+  &__timestamp {
+    font-size: 0.75rem;
+    color: #999;
+  }
+
+  &__nodata,
+  &__disconnected {
+    font-size: 0.9rem;
+    color: #aaa;
+    font-style: italic;
+    padding: 1rem 0; // Add some padding when showing messages
+  }
+}
+
+---- src/app/features/temperature-display/temperature-display.component.html ----
+<div class="temperature-display">
+  <h3 class="temperature-display__title">Temperature</h3>
+  @if (isConnected()) {
+    @if (temperatureData(); as data) {
+      <div class="temperature-display__value">
+        {{ data.measurement | number:'1.1-2' }} °C
+      </div>
+      <div class="temperature-display__timestamp">
+        Last updated: {{ data.timestamp | date:'mediumTime' }} <!-- Assuming timestamp is ms -->
+      </div>
+    } @else {
+      <div class="temperature-display__nodata">Waiting for data...</div>
+    }
+  } @else {
+    <div class="temperature-display__disconnected">Connect device to see data</div>
+  }
+</div>
+---- src/app/features/debug-panel/debug-panel.component.html ----
+<div class="debug-panel">
+    <div class="debug-panel__header">
+        <h3 class="debug-panel__title">Movesense Debug Panel</h3>
+        <div class="debug-panel__controls">
+            <button class="debug-panel__button" (click)="clearLog()">Clear Log</button>
+            @if (isConnected()) {
+            <button class="debug-panel__button" (click)="trySpecificFormat()">
+                Try Specific Format
+            </button>
+            }
+        </div>
+    </div>
+
+    <div class="debug-panel__status">
+        <h4 class="debug-panel__subtitle">Sensor Status</h4>
+        <div class="debug-panel__sensor-grid">
+            <div class="debug-panel__sensor">
+                <span class="debug-panel__sensor-name">Temperature:</span>
+                <span class="debug-panel__sensor-status" [class.active]="temperatureStatus() === 'active'"
+                    [class.error]="temperatureStatus() === 'error'">
+                    {{ temperatureStatus() }}
+                </span>
+            </div>
+            <div class="debug-panel__sensor">
+                <span class="debug-panel__sensor-name">Accelerometer:</span>
+                <span class="debug-panel__sensor-status" [class.active]="accelerometerStatus() === 'active'"
+                    [class.error]="accelerometerStatus() === 'error'">
+                    {{ accelerometerStatus() }}
+                </span>
+            </div>
+            <div class="debug-panel__sensor">
+                <span class="debug-panel__sensor-name">Heart Rate:</span>
+                <span class="debug-panel__sensor-status" [class.active]="heartRateStatus() === 'active'"
+                    [class.error]="heartRateStatus() === 'error'">
+                    {{ heartRateStatus() }}
+                </span>
+            </div>
+            <div class="debug-panel__sensor">
+                <span class="debug-panel__sensor-name">Gyroscope:</span>
+                <span class="debug-panel__sensor-status" [class.active]="gyroscopeStatus() === 'active'"
+                    [class.error]="gyroscopeStatus() === 'error'">
+                    {{ gyroscopeStatus() }}
+                </span>
+            </div>
+            <div class="debug-panel__sensor">
+                <span class="debug-panel__sensor-name">Magnetometer:</span>
+                <span class="debug-panel__sensor-status" [class.active]="magnetometerStatus() === 'active'"
+                    [class.error]="magnetometerStatus() === 'error'">
+                    {{ magnetometerStatus() }}
+                </span>
+            </div>
+            <div class="debug-panel__sensor">
+                <span class="debug-panel__sensor-name">ECG:</span>
+                <span class="debug-panel__sensor-status" [class.active]="ecgStatus() === 'active'"
+                    [class.error]="ecgStatus() === 'error'">
+                    {{ ecgStatus() }}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="debug-panel__log">
+        <h4 class="debug-panel__subtitle">Debug Log</h4>
+        <div class="debug-panel__log-container">
+            @for (entry of debugLog(); track $index) {
+            <div class="debug-panel__log-entry">{{ entry }}</div>
+            }
+            @if (debugLog().length === 0) {
+            <div class="debug-panel__log-empty">No log entries yet</div>
+            }
+        </div>
+    </div>
+</div>
+---- src/app/features/debug-panel/debug-panel.component.ts ----
+import { Component, inject, ChangeDetectionStrategy, Signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MovesenseService } from '../../core/services/movesense.service';
+import { SensorStatus } from '../../core/services/models/movesense.model';
+
+@Component({
+  selector: 'app-debug-panel',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './debug-panel.component.html',
+  styleUrls: ['./debug-panel.component.scss'],
+  changeDetection: ChangeDetectionStrategy.OnPush
+})
+export class DebugPanelComponent {
+  private readonly movesenseService = inject(MovesenseService);
+
+  // Expose signals for template
+  readonly debugLog: Signal<string[]> = this.movesenseService.debugLog;
+  readonly isConnected: Signal<boolean> = this.movesenseService.isConnected;
+
+  // Sensor status
+  readonly temperatureStatus: Signal<SensorStatus> = this.movesenseService.temperatureStatus;
+  readonly accelerometerStatus: Signal<SensorStatus> = this.movesenseService.accelerometerStatus;
+  readonly heartRateStatus: Signal<SensorStatus> = this.movesenseService.heartRateStatus;
+  readonly gyroscopeStatus: Signal<SensorStatus> = this.movesenseService.gyroscopeStatus;
+  readonly magnetometerStatus: Signal<SensorStatus> = this.movesenseService.magnetometerStatus;
+  readonly ecgStatus: Signal<SensorStatus> = this.movesenseService.ecgStatus;
+
+  clearLog(): void {
+    this.movesenseService.clearLog();
+  }
+
+  trySpecificFormat(): void {
+    this.movesenseService.trySpecificFormat();
+  }
+}
+---- src/app/features/debug-panel/debug-panel.component.scss ----
+.debug-panel {
+  padding: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background-color: #fff;
+  margin-bottom: 1.5rem;
+
+  &__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 500;
+    color: #333;
+  }
+
+  &__subtitle {
+    margin: 0.5rem 0;
+    font-size: 1rem;
+    font-weight: 500;
+    color: #666;
+  }
+
+  &__controls {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  &__button {
+    padding: 0.4rem 0.8rem;
+    border: none;
+    border-radius: 4px;
+    background-color: #3f51b5;
+    color: white;
+    font-size: 0.9rem;
+    cursor: pointer;
+
+    &:hover {
+      background-color: #283593;
+    }
+  }
+
+  &__status {
+    margin-bottom: 1rem;
+  }
+
+  &__sensor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.5rem;
+  }
+
+  &__sensor {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem;
+    border-radius: 4px;
+    background-color: #f5f5f5;
+  }
+
+  &__sensor-name {
+    font-weight: 500;
+    color: #555;
+  }
+
+  &__sensor-status {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    background-color: #e0e0e0;
+    color: #999;
+    text-transform: capitalize;
+
+    &.active {
+      background-color: #c8e6c9;
+      color: #2e7d32;
+    }
+
+    &.error {
+      background-color: #ffcdd2;
+      color: #c62828;
+    }
+  }
+
+  &__log {
+    border-top: 1px solid #eee;
+    padding-top: 1rem;
+  }
+
+  &__log-container {
+    height: 200px;
+    overflow-y: auto;
+    background-color: #f5f5f5;
+    border-radius: 4px;
+    padding: 0.5rem;
+    font-family: monospace;
+    font-size: 0.85rem;
+  }
+
+  &__log-entry {
+    margin-bottom: 0.25rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  &__log-empty {
+    color: #999;
+    font-style: italic;
+    text-align: center;
+    padding: 1rem;
+  }
+}
+
+---- src/app/features/gyro-display/gyro-display.component.html ----
+<div class="gyro-display">
+  <h3 class="gyro-display__title">Gyroscope (°/s)</h3>
+  @if (isConnected()) {
+    @if (gyroData(); as data) {
+      <div class="gyro-display__data">
+        <div class="gyro-display__values">
+          <span>X: {{ data.samples[data.samples.length - 1].x | number:'1.2-2' }}</span>
+          <span>Y: {{ data.samples[data.samples.length - 1].y | number:'1.2-2' }}</span>
+          <span>Z: {{ data.samples[data.samples.length - 1].z | number:'1.2-2' }}</span>
+        </div>
+      </div>
+    } @else {
+      <div class="gyro-display__nodata">Waiting for data...</div>
+    }
+  } @else {
+    <div class="gyro-display__disconnected">Connect device to see data</div>
+  }
+</div>
+---- src/app/features/gyro-display/gyro-display.component.scss ----
+// Inherit styles from temperature display for simple layout
+@use "../temperature-display/temperature-display.component.scss" as temp-styles;
+
+.gyro-display {
+  @extend .temperature-display; // Extend base styles
+
+  &__title {
+    @extend .temperature-display__title;
+  }
+
+  &__data {
+    // Placeholder style
+    font-size: 0.9rem;
+    color: #333;
+    padding: 1rem 0;
+  }
+
+  &__values {
+    // Example style if showing X,Y,Z
+    display: flex;
+    justify-content: space-around;
+    width: 100%;
+    font-size: 1rem;
+    font-weight: 500;
+    color: #333;
+    margin-top: 0.5rem;
+
+    span {
+      flex-basis: 30%;
+      text-align: center;
+    }
+  }
+
+  &__nodata {
+    @extend .temperature-display__nodata;
+  }
+
+  &__disconnected {
+    @extend .temperature-display__disconnected;
+  }
+}
+
+---- src/app/features/gyro-display/gyro-display.component.ts ----
+import { Component, inject, ChangeDetectionStrategy, Signal } from '@angular/core';
+import { MovesenseService } from '../../core/services/movesense.service';
+import { DecimalPipe } from '@angular/common';
+
+@Component({
+    selector: 'app-gyro-display',
+    templateUrl: './gyro-display.component.html',
+    styleUrls: ['./gyro-display.component.scss'],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    imports: [DecimalPipe],
+    standalone: true
+})
+export class GyroDisplayComponent {
+    private readonly movesenseService = inject(MovesenseService);
+
+    // Expose the signal
+    readonly gyroData: Signal<any | null> = this.movesenseService.gyroscopeData;
+    readonly isConnected: Signal<boolean> = this.movesenseService.isConnected;
+}
+---- src/app/features/magn-display/magn-display.component.scss ----
+// Inherit styles from temperature display for simple layout
+@use "../temperature-display/temperature-display.component.scss" as temp-styles;
+@use "../gyro-display/gyro-display.component.scss" as gyro-styles; // For value display if needed
+
+.magn-display {
+  @extend .temperature-display; // Extend base styles
+
+  &__title {
+    @extend .temperature-display__title;
+  }
+
+  &__data {
+    // Placeholder style
+    @extend .gyro-display__data;
+  }
+
+  &__values {
+    // Example style if showing X,Y,Z
+    @extend .gyro-display__values;
+  }
+
+  &__nodata {
+    @extend .temperature-display__nodata;
+  }
+
+  &__disconnected {
+    @extend .temperature-display__disconnected;
+  }
+}
+
+---- src/app/features/magn-display/magn-display.component.html ----
+<div class="magn-display">
+  <h3 class="magn-display__title">Magnetometer (mgauss)</h3>
+  @if (isConnected()) {
+    @if (magnData(); as data) {
+      <div class="magn-display__data">
+        <div class="magn-display__values">
+          <span>X: {{ data.samples[data.samples.length - 1].x | number:'1.2-2' }}</span>
+          <span>Y: {{ data.samples[data.samples.length - 1].y | number:'1.2-2' }}</span>
+          <span>Z: {{ data.samples[data.samples.length - 1].z | number:'1.2-2' }}</span>
+        </div>
+      </div>
+    } @else {
+      <div class="magn-display__nodata">Waiting for data...</div>
+    }
+  } @else {
+    <div class="magn-display__disconnected">Connect device to see data</div>
+  }
+</div>
+---- src/app/features/magn-display/magn-display.component.ts ----
+import { Component, inject, ChangeDetectionStrategy, Signal } from '@angular/core';
+import { MovesenseService } from '../../core/services/movesense.service';
+import { DecimalPipe } from '@angular/common';
+
+@Component({
+    selector: 'app-magn-display',
+    templateUrl: './magn-display.component.html',
+    styleUrls: ['./magn-display.component.scss'],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    imports: [DecimalPipe],
+    standalone: true
+})
+export class MagnDisplayComponent {
+    private readonly movesenseService = inject(MovesenseService);
+
+    // Expose the signal (currently 'any', update when interface defined)
+    readonly magnData: Signal<any | null> = this.movesenseService.magnetometerData;
+    readonly isConnected: Signal<boolean> = this.movesenseService.isConnected;
+}
+---- src/app/features/acc-chart/acc-chart.component.scss ----
+// Inherit most styles from hr-chart for consistency
+@use "../hr-chart/hr-chart.component.scss" as hr-styles;
+
+.acc-chart {
+  @extend .hr-chart; // Extend base styles from hr-chart
+
+  &__title {
+    @extend .hr-chart__title; // Extend title style
+  }
+
+  &__chart-container {
+    @extend .hr-chart__chart-container; // Extend chart container style
+  }
+
+  &__nodata {
+    @extend .hr-chart__nodata; // Extend nodata message style
+  }
+
+  &__disconnected {
+    @extend .hr-chart__disconnected; // Extend disconnected message style
+  }
+
+  // Specific overrides or additions for acc-chart can go here if needed
+  // For example, adjusting legend position if desired
+  // ::ng-deep .ngx-charts-legend {
+  //   transform: translateY(-10px); // Example adjustment
+  // }
+}
+
+---- src/app/features/acc-chart/acc-chart.component.html ----
+<div class="acc-chart">
+  <h3 class="acc-chart__title">Accelerometer (m/s²)</h3>
+  @if (isConnected()) {
+    @if (chartData()[0].series.length > 0) {
+      <ngx-charts-line-chart
+        class="acc-chart__chart-container"
+        [view]="view"
+        [scheme]="colorScheme"
+        [results]="chartData()"
+        [legend]="legend"
+        [xAxis]="true"
+        [yAxis]="true"
+        [showXAxisLabel]="showXAxisLabel"
+        [showYAxisLabel]="showYAxisLabel"
+        [xAxisLabel]="xAxisLabel"
+        [yAxisLabel]="yAxisLabel"
+        [timeline]="timeline"
+        [autoScale]="autoScale"
+        [xAxisTickFormatting]="xAxisTickFormatting">
+      </ngx-charts-line-chart>
+    } @else {
+      <div class="acc-chart__nodata">Waiting for Accelerometer data...</div>
+    }
+  } @else {
+    <div class="acc-chart__disconnected">Connect device to see chart</div>
+  }
+</div>
+---- src/app/features/acc-chart/acc-chart.component.ts ----
+import { Component, inject, ChangeDetectionStrategy, signal, WritableSignal, computed, Signal, effect } from '@angular/core';
+import { NgxChartsModule, ScaleType } from '@swimlane/ngx-charts'; // Import the module
+import { MovesenseService } from '../../core/services/movesense.service';
+import { ChartData, ChartSeriesData } from '../hr-chart/hr-chart.component'; // Reuse chart interfaces
+import { AccelerometerData } from '../../core/services/models/movesense.model';
+
+const MAX_ACC_DATA_POINTS = 100; // Keep history for accelerometer
+
+@Component({
+    selector: 'app-acc-chart',
+    templateUrl: './acc-chart.component.html',
+    styleUrls: ['./acc-chart.component.scss'],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    imports: [NgxChartsModule], // Import the module for standalone components
+    // standalone: true is default
+})
+export class AccChartComponent {
+    private readonly movesenseService = inject(MovesenseService);
+
+    // --- Chart Data Signal ---
+    // Holds data for X, Y, Z axes
+    readonly chartData: WritableSignal<ChartData[]> = signal([
+        { name: 'X', series: [] },
+        { name: 'Y', series: [] },
+        { name: 'Z', series: [] }
+    ]);
+
+    // --- Chart Configuration ---
+    readonly view: [number, number] = [700, 300]; // Chart dimensions
+    readonly legend: boolean = true; // Show legend for X, Y, Z
+    readonly showXAxisLabel: boolean = true;
+    readonly showYAxisLabel: boolean = true;
+    readonly xAxisLabel: string = 'Time';
+    readonly yAxisLabel: string = 'Acceleration (m/s²)'; // Assuming units, adjust if needed
+    readonly timeline: boolean = true;
+    readonly colorScheme = { // Example color scheme for 3 axes
+        name: 'accScheme',
+        selectable: true,
+        group: ScaleType.Ordinal,
+        domain: ['#FF0000', '#00FF00', '#0000FF'] // Red, Green, Blue for X, Y, Z
+    };
+    readonly autoScale = true; // Auto-scale Y-axis
+
+    // Expose connection status
+    readonly isConnected: Signal<boolean> = this.movesenseService.isConnected;
+
+    constructor() {
+        // Effect to update chart when new Accelerometer data arrives
+        // Note: Acc data might arrive in batches. This assumes the service provides an array.
+        effect(() => {
+            const newAccDataObject = this.movesenseService.accelerometerData(); // Get latest Acc data object
+            // Check if the object exists, we are connected, and the samples array is not empty
+            if (newAccDataObject && this.isConnected()) {
+                // Pass the whole object to updateChart
+                this.updateChart(newAccDataObject);
+            }
+        }, { allowSignalWrites: true });
+
+        // Effect to clear chart data when disconnected
+        effect(() => {
+            if (!this.isConnected()) {
+                this.chartData.set([
+                    { name: 'X', series: [] },
+                    { name: 'Y', series: [] },
+                    { name: 'Z', series: [] }
+                ]);
+            }
+        });
+    }
+
+    private updateChart(newData: AccelerometerData): void {
+        this.chartData.update(currentChartData => {
+            // Create a single new data point since AccelerometerData has a single x, y, z reading
+            const timestamp = new Date(newData.timestamp);
+
+            const newPointX: ChartSeriesData = { name: timestamp, value: newData.x };
+            const newPointY: ChartSeriesData = { name: timestamp, value: newData.y };
+            const newPointZ: ChartSeriesData = { name: timestamp, value: newData.z };
+
+            // Add new points and limit history
+            const updatedSeriesX = [...currentChartData[0].series, newPointX].slice(-MAX_ACC_DATA_POINTS);
+            const updatedSeriesY = [...currentChartData[1].series, newPointY].slice(-MAX_ACC_DATA_POINTS);
+            const updatedSeriesZ = [...currentChartData[2].series, newPointZ].slice(-MAX_ACC_DATA_POINTS);
+
+            return [
+                { name: 'X', series: updatedSeriesX },
+                { name: 'Y', series: updatedSeriesY },
+                { name: 'Z', series: updatedSeriesZ }
+            ];
+        });
+    }
+
+    // Optional: Custom date formatting for x-axis ticks
+    xAxisTickFormatting(val: string | Date): string {
+        if (val instanceof Date) {
+            return val.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 }); // Include milliseconds
+        }
+        return String(val);
+    }
+}
+---- src/app/app.component.ts ----
+import { Component, ChangeDetectionStrategy } from '@angular/core';
+import { RouterOutlet } from '@angular/router';
+import { ConnectionComponent } from './features/connection/connection.component';
+import { TemperatureDisplayComponent } from './features/temperature-display/temperature-display.component';
+import { HrChartComponent } from './features/hr-chart/hr-chart.component';
+import { AccChartComponent } from './features/acc-chart/acc-chart.component';
+import { EcgChartComponent } from './features/ecg-chart/ecg-chart.component';
+import { MetricsDisplayComponent } from './features/metrics-display/metrics-display.component'; // Import Metrics
+import { GyroDisplayComponent } from './features/gyro-display/gyro-display.component'; // Import Gyro
+import { MagnDisplayComponent } from './features/magn-display/magn-display.component'; // Import Magn
+import { DebugPanelComponent } from './features/debug-panel/debug-panel.component';
+
+@Component({
+  selector: 'app-root',
+  imports: [
+    RouterOutlet,
+    ConnectionComponent,
+    TemperatureDisplayComponent,
+    HrChartComponent,
+    AccChartComponent,
+    EcgChartComponent,
+    DebugPanelComponent, // Add Debug Panel
+    MetricsDisplayComponent, // Add Metrics
+    GyroDisplayComponent,    // Add Gyro
+    MagnDisplayComponent     // Add Magn
+  ],
+  templateUrl: './app.component.html',
+  styleUrl: './app.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush // Add ChangeDetectionStrategy
+})
+export class AppComponent {
+  // No title needed for now
+}
+
+---- src/app/app.config.ts ----
+import { ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
+import { provideRouter } from '@angular/router';
+import { provideAnimations } from '@angular/platform-browser/animations'; // Import provideAnimations
+
+import { routes } from './app.routes';
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideZoneChangeDetection({ eventCoalescing: true }),
+    provideRouter(routes),
+    provideAnimations() // Add provideAnimations here
+  ]
+};
+
+---- src/main.ts ----
+import { bootstrapApplication } from '@angular/platform-browser';
+import { appConfig } from './app/app.config';
+import { AppComponent } from './app/app.component';
+
+bootstrapApplication(AppComponent, appConfig)
+  .catch((err) => console.error(err));
+
+---- src/styles.scss ----
+/* You can add global styles to this file, and also import other style files */
+

@@ -1,0 +1,60 @@
+<div class="metrics-display">
+  <h3 class="metrics-display__title">Calculated Metrics</h3>
+  @if (isConnected()) {
+    <div class="metrics-display__grid">
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Steps:</span>
+        <span class="metrics-display__value">{{ steps() }}</span>
+      </div>
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Distance:</span>
+        <span class="metrics-display__value">{{ distance() | number:'1.0-1' }} m</span>
+      </div>
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Posture:</span>
+        <span class="metrics-display__value metrics-display__value--posture-{{posture()}}">{{ posture() }}</span>
+      </div>
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">HRV (RMSSD):</span>
+        <span class="metrics-display__value">{{ hrvRmssd() ?? 'N/A' }} ms</span>
+      </div>
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Stress Level:</span>
+        @if (stressLevel() !== null) {
+          <span class="metrics-display__value">{{ stressLevel() }} %</span>
+          <!-- Optional: Add a simple visual indicator -->
+          <div class="metrics-display__stress-bar">
+            <div class="metrics-display__stress-fill" [style.width.%]="stressLevel()"></div>
+          </div>
+        } @else {
+          <span class="metrics-display__value">N/A</span>
+        }
+      </div>
+      
+      <!-- Fall Detection Status - Added -->
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Fall Detected:</span>
+        <span class="metrics-display__value" [class.metrics-display__value--alert]="fallDetected()">
+          {{ fallDetected() ? 'YES - ALERT!' : 'No' }}
+        </span>
+      </div>
+      <!-- Last Fall Timestamp - Added -->
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Last Fall:</span>
+        <span class="metrics-display__value">{{ formatFallTime(lastFallTimestamp()) }}</span>
+      </div>
+      
+      <!-- Activity metrics -->
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Dribbles:</span>
+        <span class="metrics-display__value">{{ dribbleCount() }}</span>
+      </div>
+      <div class="metrics-display__item">
+        <span class="metrics-display__label">Calories (Est.):</span>
+        <span class="metrics-display__value">{{ caloriesBurned() }} kcal</span>
+      </div>
+    </div>
+  } @else {
+    <div class="metrics-display__disconnected">Connect device to see metrics</div>
+  }
+</div>

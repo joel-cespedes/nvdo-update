@@ -1,0 +1,20 @@
+{
+    "name": "focus-scope",
+    "version": "0.2.0",
+    "type": "module",
+    "scripts": {
+        "vectorize": "ts-node scripts/vectorize.ts",
+        "suggest": "ts-node scripts/suggest-entry.ts",
+        "build": "ts-node scripts/build-context.ts"
+    },
+    "dependencies": {
+        "@xenova/transformers": "^2.10.0",
+        "glob": "^10.3.3",
+        "ts-morph": "^22.0.0",
+        "@dqbd/tiktoken": "^1.0.7"
+    },
+    "devDependencies": {
+        "ts-node": "^10.9.2",
+        "typescript": "^5.4.0"
+    }
+}

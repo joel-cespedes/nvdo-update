@@ -1,7 +1,9 @@
 import { Component, inject, ChangeDetectionStrategy, signal, WritableSignal, computed, Signal, effect } from '@angular/core';
 import { NgxChartsModule, ScaleType } from '@swimlane/ngx-charts'; // Import the module
-import { MovesenseService, EcgData } from '../../core/services/movesense.service';
+
 import { ChartData, ChartSeriesData } from '../hr-chart/hr-chart.component'; // Reuse chart interfaces
+import { EcgData } from '../../core/services/models/movesense.model';
+import { MovesenseService } from '../../core/services/movesense.service';
 
 const MAX_ECG_DATA_POINTS = 500; // Keep a larger history for ECG, adjust as needed for performance
 
@@ -39,8 +41,9 @@ export class EcgChartComponent {
     // Consider disabling autoScale if the range is relatively fixed or jumps too much
     readonly autoScale = true;
 
-    // Expose connection status
+    // Expose connection status and recording status
     readonly isConnected: Signal<boolean> = this.movesenseService.isConnected;
+    readonly isRecording: Signal<boolean> = this.movesenseService.isEcgRecording;
 
     constructor() {
         // Effect to update chart when new ECG data arrives
@@ -94,5 +97,14 @@ export class EcgChartComponent {
             return val.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
         }
         return String(val);
+    }
+
+    // --- Recording Control Methods ---
+    startRecording(): void {
+        this.movesenseService.startEcgRecording();
+    }
+
+    stopRecording(): void {
+        this.movesenseService.stopEcgRecording();
     }
 }

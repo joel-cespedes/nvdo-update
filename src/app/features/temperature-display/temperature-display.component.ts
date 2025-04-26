@@ -1,7 +1,8 @@
 import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
 import { AsyncPipe, DecimalPipe, DatePipe } from '@angular/common'; // Import necessary pipes
-import { MovesenseService, TemperatureData } from '../../core/services/movesense.service';
+import { MovesenseService } from '../../core/services/movesense.service';
 import { Signal } from '@angular/core'; // Import Signal type
+import { TemperatureData } from '../../core/services/models/movesense.model';
 
 @Component({
     selector: 'app-temperature-display',

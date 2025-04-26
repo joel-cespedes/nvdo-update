@@ -1,0 +1,29 @@
+// Inherit styles from temperature display for simple layout
+@use "../temperature-display/temperature-display.component.scss" as temp-styles;
+@use "../gyro-display/gyro-display.component.scss" as gyro-styles; // For value display if needed
+
+.magn-display {
+  @extend .temperature-display; // Extend base styles
+
+  &__title {
+    @extend .temperature-display__title;
+  }
+
+  &__data {
+    // Placeholder style
+    @extend .gyro-display__data;
+  }
+
+  &__values {
+    // Example style if showing X,Y,Z
+    @extend .gyro-display__values;
+  }
+
+  &__nodata {
+    @extend .temperature-display__nodata;
+  }
+
+  &__disconnected {
+    @extend .temperature-display__disconnected;
+  }
+}
