@@ -14,7 +14,7 @@ import {
     TemperatureData
 } from './models/movesense.model';
 import { MovesenseDataProcessorService } from './movesense-data-processor.service';
-import { MovesenseLoggerService } from './movesense-logger.service';
+
 
 /**
  * Main Movesense service that coordinates connection and data processing
@@ -25,7 +25,7 @@ import { MovesenseLoggerService } from './movesense-logger.service';
 export class MovesenseService {
     private connectionService = inject(MovesenseConnectionService);
     private dataProcessor = inject(MovesenseDataProcessorService);
-    private logger = inject(MovesenseLoggerService);
+
 
     // Sensor data monitoring timer
     private sensorMonitorTimer: any = null;
@@ -63,7 +63,7 @@ export class MovesenseService {
             }
         } catch (error) {
             console.error('Error connecting to Movesense device:', error);
-            this.logger.error('Failed to connect to Movesense', error);
+
         }
     }
 
@@ -81,7 +81,6 @@ export class MovesenseService {
         }
 
         console.log('Subscribing to sensors...');
-        this.logger.log('Subscribing to all available sensors...');
 
         // Use the device-specific command format
         this.connectionService.subscribeToSensors();
@@ -101,19 +100,16 @@ export class MovesenseService {
 
     // --- Public API: Debug Functions ---
 
-    /** Clear log entries */
-    clearLog(): void {
-        this.logger.clearLogs();
-    }
+
 
     /** Try specific format from original app */
     trySpecificFormat(): void {
         if (!this.isConnected()) {
-            this.logger.log('Cannot try specific format - not connected');
+
             return;
         }
 
-        this.logger.log('Trying specific format for this device model...');
+
 
         // Send commands in the specific format
         this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.TEMPERATURE, 'Temperature (specific format)');
@@ -266,10 +262,7 @@ export class MovesenseService {
 
     // --- Debug Log (proxying from logger) ---
 
-    /** Debug log entries */
-    get debugLog(): Signal<string[]> {
-        return this.logger.logEntries;
-    }
+
 
     // --- Private Methods ---
 
@@ -290,14 +283,13 @@ export class MovesenseService {
 
             if (data.length === 0) return;
 
-            // Log the raw data for debugging
-            console.log(`Recibido datos RAW: ${this.logger.bufferToHex(data)} (${data.length} bytes)`);
+
 
             // Send to data processor
             this.dataProcessor.processNotification(data);
         } catch (error) {
             console.error('Error handling notification:', error);
-            this.logger.error('Error handling notification', error);
+
         }
     }
 
