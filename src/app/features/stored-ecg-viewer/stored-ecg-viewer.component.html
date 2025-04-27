@@ -1,0 +1,38 @@
+<div class="ecg-viewer">
+    @if (ecgData()) {
+    <div class="ecg-viewer__info">
+        <div class="ecg-viewer__name">
+            {{ ecgData()?.name || 'ECG sin nombre' }}
+        </div>
+        <div class="ecg-viewer__details">
+            <span class="ecg-viewer__date">
+                {{ ecgData()?.timestamp | date:'medium' }}
+            </span>
+            <span class="ecg-viewer__duration">
+                Duración: {{ ecgData() ? ecgData()!.duration.toFixed(1) : 0 }}s
+            </span>
+            <span class="ecg-viewer__samples">
+                Muestras: {{ ecgData() ? ecgData()!.samples.length : 0 }}
+            </span>
+        </div>
+    </div>
+
+    <div class="ecg-viewer__chart">
+        @if (chartData()[0].series.length > 0) {
+        <ngx-charts-line-chart class="ecg-viewer__chart-container" [view]="view" [scheme]="colorScheme"
+            [results]="chartData()" [legend]="legend" [xAxis]="true" [yAxis]="true" [showXAxisLabel]="showXAxisLabel"
+            [showYAxisLabel]="showYAxisLabel" [xAxisLabel]="xAxisLabel" [yAxisLabel]="yAxisLabel" [timeline]="timeline"
+            [autoScale]="autoScale" [xAxisTickFormatting]="xAxisTickFormatting">
+        </ngx-charts-line-chart>
+        } @else {
+        <div class="ecg-viewer__no-data">
+            El ECG no contiene datos válidos
+        </div>
+        }
+    </div>
+    } @else {
+    <div class="ecg-viewer__no-data">
+        No se encontró el ECG solicitado
+    </div>
+    }
+</div>

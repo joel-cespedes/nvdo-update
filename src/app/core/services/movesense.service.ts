@@ -1,39 +1,30 @@
-import { effect, inject, Injectable, Signal } from '@angular/core';
-
+import { effect, computed, inject, Injectable, Signal } from '@angular/core';
 import { MovesenseConnectionService } from './movesense-connection.service';
-
-import {
-    AccelerometerData,
-    EcgData,
-    GyroscopeData,
-    HeartRateData,
-    MagnetometerData,
-    MOVESENSE_COMMANDS,
-    PostureState,
-    SensorStatus,
-    TemperatureData
-} from './models/movesense.model';
 import { MovesenseDataProcessorService } from './movesense-data-processor.service';
+import { EcgStorageService } from './ecg-storage.service';
+import { MOVESENSE_COMMANDS } from '../models/movesense-commands.model';
+import { SensorStatus } from '../models/sensor-data.model';
 
-
-/**
- * Main Movesense service that coordinates connection and data processing
- */
 @Injectable({
     providedIn: 'root',
 })
 export class MovesenseService {
+    // Servicios inyectados
     private connectionService = inject(MovesenseConnectionService);
     private dataProcessor = inject(MovesenseDataProcessorService);
+    private ecgStorage = inject(EcgStorageService);
 
-
-    // Sensor data monitoring timer
+    // Timer para monitoreo de sensores
     private sensorMonitorTimer: any = null;
 
-    constructor() {
-        console.log('MovesenseService initialized');
+    // Estado de grabación ECG
+    readonly isRecording = computed(() => this.dataProcessor.isEcgRecording());
+    readonly recordedSamples = computed(() => this.dataProcessor.recordedEcgSamples());
+    readonly storedEcgs = computed(() => this.ecgStorage.storedEcgs());
+    readonly hasStoredEcgs = computed(() => this.ecgStorage.hasStoredEcgs());
 
-        // Monitor connection state
+    constructor() {
+        // Monitorear estado de conexión
         effect(() => {
             if (this.isConnected()) {
                 this.setupSensorMonitoring();
@@ -43,75 +34,69 @@ export class MovesenseService {
         });
     }
 
-    // --- Public API: Connection Management ---
+    // --- API Pública: Gestión de Conexión ---
 
-    /** Connect to Movesense device */
     async connect(): Promise<void> {
-        console.log('Connecting to Movesense device...');
         try {
             await this.connectionService.connect();
 
-            // Register notification handler
+            // Registrar manejador de notificaciones
             if (this.isConnected()) {
                 this.connectionService.registerNotificationHandler(this.handleNotification.bind(this));
 
-                // Start activity tracking for metrics
+                // Iniciar seguimiento de actividad para métricas
                 this.dataProcessor.startActivity();
 
-                // Subscribe to sensors
+                // Suscribirse a sensores
                 this.subscribeToSensors();
             }
         } catch (error) {
             console.error('Error connecting to Movesense device:', error);
-
         }
     }
 
-    /** Disconnect from device */
     async disconnect(): Promise<void> {
-        console.log('Disconnecting from Movesense device...');
         await this.connectionService.disconnect();
     }
 
-    /** Subscribe to available sensors */
     subscribeToSensors(): void {
-        if (!this.isConnected()) {
-            console.warn('Cannot subscribe to sensors: Not connected');
-            return;
-        }
-
-        console.log('Subscribing to sensors...');
-
-        // Use the device-specific command format
+        if (!this.isConnected()) return;
         this.connectionService.subscribeToSensors();
     }
 
-    // --- Public API: ECG Recording ---
+    // --- API Pública: Grabación ECG ---
 
-    /** Start recording ECG data */
     startEcgRecording(): void {
         this.dataProcessor.startEcgRecording();
     }
 
-    /** Stop recording ECG data */
     stopEcgRecording(): void {
         this.dataProcessor.stopEcgRecording();
+
+        // Guardar las muestras en localStorage
+        if (this.recordedSamples().length > 0) {
+            this.ecgStorage.saveEcg(this.recordedSamples());
+        }
     }
 
-    // --- Public API: Debug Functions ---
+    saveStoredEcg(name: string, id: string): boolean {
+        return this.ecgStorage.renameEcg(id, name);
+    }
 
+    deleteStoredEcg(id: string): boolean {
+        return this.ecgStorage.deleteEcg(id);
+    }
 
+    getEcgById(id: string) {
+        return this.ecgStorage.getEcgById(id);
+    }
 
-    /** Try specific format from original app */
+    // --- API Pública: Funciones de Depuración ---
+
     trySpecificFormat(): void {
-        if (!this.isConnected()) {
+        if (!this.isConnected()) return;
 
-            return;
-        }
-
-
-
-        // Send commands in the specific format
+        // Enviar comandos en el formato específico
         this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.TEMPERATURE, 'Temperature (specific format)');
         this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.ACCELEROMETER, 'Accelerometer (specific format)');
         this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.HEART_RATE, 'Heart rate (specific format)');
@@ -120,162 +105,126 @@ export class MovesenseService {
         this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.ECG, 'ECG (specific format)');
     }
 
-    // --- Connection Signals (proxying from connectionService) ---
+    // --- Signals de Conexión ---
 
-    /** Is the device connected */
     get isConnected(): Signal<boolean> {
         return this.connectionService.isConnected;
     }
 
-    /** Connected device name */
     get deviceName(): Signal<string> {
         return this.connectionService.deviceName;
     }
 
-    /** Connection error if any */
     get connectionError(): Signal<string | null> {
         return this.connectionService.connectionError;
     }
 
-    // --- Sensor Data Signals (proxying from dataProcessor) ---
+    // --- Signals de Datos de Sensores ---
 
-    /** Temperature data */
-    get temperatureData(): Signal<TemperatureData | null> {
+    get temperatureData() {
         return this.dataProcessor.temperatureData;
     }
 
-    /** Accelerometer data */
-    get accelerometerData(): Signal<AccelerometerData | null> {
+    get accelerometerData() {
         return this.dataProcessor.accelerometerData;
     }
 
-    /** Heart rate data */
-    get heartRateData(): Signal<HeartRateData | null> {
+    get heartRateData() {
         return this.dataProcessor.heartRateData;
     }
 
-    /** ECG data */
-    get ecgData(): Signal<EcgData | null> {
+    get ecgData() {
         return this.dataProcessor.ecgData;
     }
 
-    /** Gyroscope data */
-    get gyroscopeData(): Signal<GyroscopeData | null> {
+    get gyroscopeData() {
         return this.dataProcessor.gyroscopeData;
     }
 
-    /** Magnetometer data */
-    get magnetometerData(): Signal<MagnetometerData | null> {
+    get magnetometerData() {
         return this.dataProcessor.magnetometerData;
     }
 
-    // --- Calculated Metrics Signals (proxying from dataProcessor) ---
+    // --- Signals de Métricas Calculadas ---
 
-    /** Step count */
-    get steps(): Signal<number> {
+    get steps() {
         return this.dataProcessor.steps;
     }
 
-    /** Distance in meters */
-    get distance(): Signal<number> {
+    get distance() {
         return this.dataProcessor.distance;
     }
 
-    /** Current posture */
-    get posture(): Signal<PostureState> {
+    get posture() {
         return this.dataProcessor.posture;
     }
 
-    /** HRV RMSSD value */
-    get hrvRmssd(): Signal<number | null> {
+    get hrvRmssd() {
         return this.dataProcessor.hrvRmssd;
     }
 
-    /** Stress level (0-100) */
-    get stressLevel(): Signal<number | null> {
+    get stressLevel() {
         return this.dataProcessor.stressLevel;
     }
 
-    /** Dribble count */
-    get dribbleCount(): Signal<number> {
+    get dribbleCount() {
         return this.dataProcessor.dribbleCount;
     }
 
-    /** Calories burned */
-    get caloriesBurned(): Signal<number> {
+    get caloriesBurned() {
         return this.dataProcessor.caloriesBurned;
     }
 
-    /** Fall detected status */
-    get fallDetected(): Signal<boolean> {
+    get fallDetected() {
         return this.dataProcessor.fallDetected;
     }
 
-    /** Last fall timestamp */
-    get lastFallTimestamp(): Signal<number | null> {
+    get lastFallTimestamp() {
         return this.dataProcessor.lastFallTimestamp;
     }
 
-    // --- Sensor Status Signals (proxying from dataProcessor) ---
+    // --- Signals de Estado de Sensores ---
 
-    /** Temperature sensor status */
-    get temperatureStatus(): Signal<SensorStatus> {
+    get temperatureStatus() {
         return this.dataProcessor.temperatureStatus;
     }
 
-    /** Accelerometer sensor status */
-    get accelerometerStatus(): Signal<SensorStatus> {
+    get accelerometerStatus() {
         return this.dataProcessor.accelerometerStatus;
     }
 
-    /** Heart rate sensor status */
-    get heartRateStatus(): Signal<SensorStatus> {
+    get heartRateStatus() {
         return this.dataProcessor.heartRateStatus;
     }
 
-    /** Gyroscope sensor status */
-    get gyroscopeStatus(): Signal<SensorStatus> {
+    get gyroscopeStatus() {
         return this.dataProcessor.gyroscopeStatus;
     }
 
-    /** Magnetometer sensor status */
-    get magnetometerStatus(): Signal<SensorStatus> {
+    get magnetometerStatus() {
         return this.dataProcessor.magnetometerStatus;
     }
 
-    /** ECG sensor status */
-    get ecgStatus(): Signal<SensorStatus> {
+    get ecgStatus() {
         return this.dataProcessor.ecgStatus;
     }
 
-    // --- ECG Recording Signals (proxying from dataProcessor) ---
-
-    /** ECG recording active status */
-    get isEcgRecording(): Signal<boolean> {
+    get isEcgRecording() {
         return this.dataProcessor.isEcgRecording;
     }
 
-    /** Recorded ECG samples */
-    get recordedEcgSamples(): Signal<number[]> {
+    get recordedEcgSamples() {
         return this.dataProcessor.recordedEcgSamples;
     }
 
-    // --- Debug Log (proxying from logger) ---
+    // --- Métodos Privados ---
 
-
-
-    // --- Private Methods ---
-
-    /**
-     * Handle notification from device
-     */
     private handleNotification(event: Event): void {
         try {
             const characteristic = (event.target as BluetoothRemoteGATTCharacteristic);
             const dataView = characteristic.value;
 
             if (!dataView) {
-                console.warn('Received empty notification');
                 return;
             }
 
@@ -283,23 +232,17 @@ export class MovesenseService {
 
             if (data.length === 0) return;
 
-
-
-            // Send to data processor
+            // Enviar al procesador de datos
             this.dataProcessor.processNotification(data);
         } catch (error) {
             console.error('Error handling notification:', error);
-
         }
     }
 
-    /**
-     * Setup sensor monitoring
-     */
     private setupSensorMonitoring(): void {
         this.clearSensorMonitoring();
 
-        // Check active sensors periodically and try to resubscribe if needed
+        // Comprobar sensores activos periódicamente y tratar de volver a suscribirse si es necesario
         this.sensorMonitorTimer = setInterval(() => {
             if (!this.isConnected()) {
                 this.clearSensorMonitoring();
@@ -307,20 +250,15 @@ export class MovesenseService {
             }
 
             const activeCount = this.dataProcessor.getActiveSensorCount();
-            console.log(`Active sensors: ${activeCount}`);
 
-            // If we have few active sensors, try the specific format commands
+            // Si tenemos pocos sensores activos, probar los comandos de formato específico
             if (activeCount < 3) {
-                console.log('Few active sensors detected, trying specific format commands');
                 this.trySpecificFormat();
             }
 
-        }, 10000); // Check every 10 seconds
+        }, 10000); // Comprueba cada 10 segundos
     }
 
-    /**
-     * Clear sensor monitoring
-     */
     private clearSensorMonitoring(): void {
         if (this.sensorMonitorTimer) {
             clearInterval(this.sensorMonitorTimer);

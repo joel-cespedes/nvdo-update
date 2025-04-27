@@ -1,22 +1,26 @@
-// Inherit styles from temperature display for simple layout
-@use "../temperature-display/temperature-display.component.scss" as temp-styles;
-
 .gyro-display {
-  @extend .temperature-display; // Extend base styles
+  padding: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background-color: #fff;
+  text-align: center;
+  min-width: 150px;
 
   &__title {
-    @extend .temperature-display__title;
+    margin-top: 0;
+    margin-bottom: 0.75rem;
+    font-size: 1rem;
+    font-weight: bold;
+    color: #555;
   }
 
   &__data {
-    // Placeholder style
     font-size: 0.9rem;
     color: #333;
     padding: 1rem 0;
   }
 
   &__values {
-    // Example style if showing X,Y,Z
     display: flex;
     justify-content: space-around;
     width: 100%;
@@ -24,18 +28,18 @@
     font-weight: 500;
     color: #333;
     margin-top: 0.5rem;
-
-    span {
-      flex-basis: 30%;
-      text-align: center;
-    }
   }
 
-  &__nodata {
-    @extend .temperature-display__nodata;
+  &__axis {
+    flex-basis: 30%;
+    text-align: center;
   }
 
+  &__nodata,
   &__disconnected {
-    @extend .temperature-display__disconnected;
+    font-size: 0.9rem;
+    color: #aaa;
+    font-style: italic;
+    padding: 1rem 0;
   }
 }

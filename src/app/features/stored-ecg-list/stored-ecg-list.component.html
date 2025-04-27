@@ -1,0 +1,52 @@
+<div class="stored-ecg">
+    <h3 class="stored-ecg__title">ECG Guardados</h3>
+
+    @if (hasStoredEcgs()) {
+    <div class="stored-ecg__container">
+        <div class="stored-ecg__list">
+            @for (ecg of storedEcgs(); track ecg.id) {
+            <div class="stored-ecg__item" [class.stored-ecg__item--selected]="selectedEcgId() === ecg.id"
+                (click)="selectEcg(ecg.id)">
+                <div class="stored-ecg__item-info">
+                    <div class="stored-ecg__item-name">
+                        {{ ecg.name || 'ECG sin nombre' }}
+                    </div>
+                    <div class="stored-ecg__item-date">
+                        {{ formatDateShort(ecg.timestamp) }}
+                    </div>
+                    <div class="stored-ecg__item-duration">
+                        Duración: {{ formatDuration(ecg.duration) }}
+                    </div>
+                </div>
+                <button class="stored-ecg__delete-btn" (click)="deleteEcg(ecg.id, $event)" aria-label="Eliminar ECG">
+                    ✕
+                </button>
+            </div>
+            }
+        </div>
+
+        @if (selectedEcgId()) {
+        <div class="stored-ecg__details">
+            <div class="stored-ecg__name-edit">
+                <input type="text" class="stored-ecg__name-input" [ngModel]="newEcgName()"
+                    (ngModelChange)="newEcgName.set($event)" placeholder="Nombre del ECG" />
+                <button class="stored-ecg__save-btn" (click)="saveEcgName()" [disabled]="!newEcgName()">
+                    Guardar
+                </button>
+            </div>
+
+            <app-stored-ecg-viewer [ecgId]="selectedEcgId() || ''" class="stored-ecg__viewer">
+            </app-stored-ecg-viewer>
+        </div>
+        } @else {
+        <div class="stored-ecg__no-selection">
+            Selecciona un ECG para visualizarlo
+        </div>
+        }
+    </div>
+    } @else {
+    <div class="stored-ecg__empty">
+        No hay ECGs guardados. Utilice la función de grabación en la pantalla de ECG.
+    </div>
+    }
+</div>

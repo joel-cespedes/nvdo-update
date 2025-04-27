@@ -14,17 +14,14 @@
 
   &__grid {
     display: grid;
-    grid-template-columns: repeat(
-      auto-fit,
-      minmax(150px, 1fr)
-    ); // Responsive grid
-    gap: 0.75rem 1rem; // Row and column gap
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem 1rem;
   }
 
   &__item {
     display: flex;
-    flex-direction: column; // Stack label and value
-    align-items: flex-start; // Align items left
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   &__label {
@@ -38,19 +35,23 @@
     font-weight: 500;
     color: #333;
 
-    // Specific styling for posture
     &--posture-standing {
       color: #4caf50;
-    } // Green
+    }
     &--posture-stooped {
       color: #ff9800;
-    } // Orange
+    }
     &--posture-lying {
       color: #2196f3;
-    } // Blue
+    }
     &--posture-unknown {
       color: #9e9e9e;
-    } // Grey
+    }
+
+    &--alert {
+      color: #f44336;
+      animation: blink 1s ease-in-out infinite alternate;
+    }
   }
 
   &__stress-bar {
@@ -64,8 +65,8 @@
 
   &__stress-fill {
     height: 100%;
-    background-color: #f44336; // Red for stress
-    border-radius: 4px 0 0 4px; // Keep left radius
+    background-color: #f44336;
+    border-radius: 4px 0 0 4px;
     transition: width 0.3s ease-in-out;
   }
 
@@ -75,5 +76,14 @@
     font-style: italic;
     padding: 1rem 0;
     text-align: center;
+  }
+}
+
+@keyframes blink {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.5;
   }
 }

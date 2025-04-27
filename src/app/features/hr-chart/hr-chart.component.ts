@@ -1,68 +1,66 @@
-import { Component, inject, ChangeDetectionStrategy, signal, WritableSignal, computed, Signal, effect } from '@angular/core';
-import { NgxChartsModule, ScaleType } from '@swimlane/ngx-charts'; // Import the module
+import { Component, inject, signal, computed, effect } from '@angular/core';
+import { NgxChartsModule, ScaleType } from '@swimlane/ngx-charts';
+import { CommonModule } from '@angular/common';
 import { MovesenseService } from '../../core/services/movesense.service';
-import { HeartRateData } from '../../core/services/models/movesense.model';
+import { HeartRateData } from '../../core/models/sensor-data.model';
 
-// Interface for ngx-charts data format
-export interface ChartData {
-    name: string; // Series name (e.g., 'Heart Rate')
+// Interfaces para formato de datos del gráfico
+interface ChartData {
+    name: string;
     series: ChartSeriesData[];
 }
 
-export interface ChartSeriesData {
-    name: string | Date; // Timestamp (using Date for x-axis)
-    value: number; // HR value
+interface ChartSeriesData {
+    name: string | Date;
+    value: number;
 }
 
-const MAX_DATA_POINTS = 60; // Keep the last 60 HR readings
+const MAX_DATA_POINTS = 60;
 
 @Component({
     selector: 'app-hr-chart',
     templateUrl: './hr-chart.component.html',
     styleUrls: ['./hr-chart.component.scss'],
-    changeDetection: ChangeDetectionStrategy.OnPush,
-    imports: [NgxChartsModule], // Import the module for standalone components
-    // standalone: true is default
+    imports: [NgxChartsModule, CommonModule]
 })
 export class HrChartComponent {
-    private readonly movesenseService = inject(MovesenseService);
+    private movesenseService = inject(MovesenseService);
 
-    // --- Chart Data Signal ---
-    // Holds the data formatted for ngx-charts
-    readonly chartData: WritableSignal<ChartData[]> = signal([{ name: 'Heart Rate', series: [] }]);
+    // Signal para datos del gráfico
+    readonly chartData = signal<ChartData[]>([{ name: 'Ritmo Cardíaco', series: [] }]);
 
-    // --- Chart Configuration ---
-    readonly view: [number, number] = [700, 300]; // Chart dimensions [width, height]
-    readonly legend: boolean = false;
-    readonly showXAxisLabel: boolean = true;
-    readonly showYAxisLabel: boolean = true;
-    readonly xAxisLabel: string = 'Time';
-    readonly yAxisLabel: string = 'Heart Rate (BPM)';
-    readonly timeline: boolean = true; // Enable timeline view for time-series data
-    readonly colorScheme = { // Example color scheme
+    // Configuración del gráfico
+    readonly view: [number, number] = [700, 300];
+    readonly legend = false;
+    readonly showXAxisLabel = true;
+    readonly showYAxisLabel = true;
+    readonly xAxisLabel = 'Tiempo';
+    readonly yAxisLabel = 'Ritmo Cardíaco (BPM)';
+    readonly timeline = true;
+    readonly colorScheme = {
         name: 'hrScheme',
         selectable: true,
         group: ScaleType.Ordinal,
-        domain: ['#E44D25'] // Reddish color for HR
+        domain: ['#E44D25']
     };
-    readonly autoScale = true; // Automatically adjust y-axis scale
+    readonly autoScale = true;
 
-    // Expose connection status
-    readonly isConnected: Signal<boolean> = this.movesenseService.isConnected;
+    // Computed signal para el estado de conexión
+    readonly isConnected = computed(() => this.movesenseService.isConnected());
 
     constructor() {
-        // Effect to update chart data when new HR data arrives from the service
+        // Effect para actualizar datos del gráfico cuando llegan nuevos datos de HR
         effect(() => {
-            const newHrData = this.movesenseService.heartRateData(); // Get latest HR data point
+            const newHrData = this.movesenseService.heartRateData();
             if (newHrData && this.isConnected()) {
                 this.updateChart(newHrData);
             }
-        }, { allowSignalWrites: true }); // Allow writing to chartData signal inside effect
+        });
 
-        // Effect to clear chart data when disconnected
+        // Effect para limpiar datos del gráfico al desconectar
         effect(() => {
             if (!this.isConnected()) {
-                this.chartData.set([{ name: 'Heart Rate', series: [] }]);
+                this.chartData.set([{ name: 'Ritmo Cardíaco', series: [] }]);
             }
         });
     }
@@ -71,21 +69,21 @@ export class HrChartComponent {
         this.chartData.update(currentChartData => {
             const series = currentChartData[0].series;
             const newPoint: ChartSeriesData = {
-                name: new Date(newData.timestamp), // Use Date object for time axis
+                name: new Date(newData.timestamp),
                 value: newData.hr
             };
 
-            // Add new data point and limit history length
+            // Añadir nuevo punto y limitar longitud de historial
             const updatedSeries = [...series, newPoint].slice(-MAX_DATA_POINTS);
 
-            return [{ name: 'Heart Rate', series: updatedSeries }];
+            return [{ name: 'Ritmo Cardíaco', series: updatedSeries }];
         });
     }
 
-    // Optional: Custom date formatting for x-axis ticks
+    // Formateo personalizado para ticks del eje X
     xAxisTickFormatting(val: string | Date): string {
         if (val instanceof Date) {
-            return val.toLocaleTimeString(); // Format as HH:MM:SS
+            return val.toLocaleTimeString();
         }
         return String(val);
     }

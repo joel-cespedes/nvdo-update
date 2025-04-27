@@ -1,10 +1,10 @@
 .temperature-display {
   padding: 1rem;
-  border: 1px solid #e0e0e0; // Lighter border
+  border: 1px solid #e0e0e0;
   border-radius: 4px;
   background-color: #fff;
   text-align: center;
-  min-width: 150px; // Ensure some minimum width
+  min-width: 150px;
 
   &__title {
     margin-top: 0;
@@ -17,7 +17,7 @@
   &__value {
     font-size: 1.8rem;
     font-weight: bold;
-    color: #3f51b5; // Use theme color
+    color: #3f51b5;
     margin-bottom: 0.25rem;
   }
 
@@ -31,6 +31,6 @@
     font-size: 0.9rem;
     color: #aaa;
     font-style: italic;
-    padding: 1rem 0; // Add some padding when showing messages
+    padding: 1rem 0;
   }
 }

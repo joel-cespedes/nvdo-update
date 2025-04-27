@@ -1,24 +1,31 @@
-// Inherit most styles from hr-chart for consistency
-@use "../hr-chart/hr-chart.component.scss" as hr-styles;
-
 .ecg-chart {
-  @extend .hr-chart; // Extend base styles
+  padding: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background-color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 
   &__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    width: 100%; // Make header take full width
-    margin-bottom: 0.5rem; // Adjust spacing
+    width: 100%;
+    margin-bottom: 0.5rem;
   }
 
   &__title {
-    @extend .hr-chart__title; // Extend title style
-    margin-bottom: 0; // Remove bottom margin from title itself
+    margin-top: 0;
+    margin-bottom: 0;
+    font-size: 1rem;
+    font-weight: bold;
+    color: #555;
   }
 
   &__controls {
-    // Styles for the button container
+    display: flex;
+    gap: 0.5rem;
   }
 
   &__button {
@@ -31,14 +38,16 @@
     color: white;
 
     &--start {
-      background-color: #4caf50; // Green
+      background-color: #4caf50;
+
       &:hover {
         background-color: #45a049;
       }
     }
 
     &--stop {
-      background-color: #f44336; // Red
+      background-color: #f44336;
+
       &:hover {
         background-color: #e53935;
       }
@@ -46,16 +55,37 @@
   }
 
   &__chart-container {
-    @extend .hr-chart__chart-container; // Extend chart container style
+    width: 100%;
+    height: 300px;
   }
 
-  &__nodata {
-    @extend .hr-chart__nodata; // Extend nodata message style
-  }
-
+  &__nodata,
   &__disconnected {
-    @extend .hr-chart__disconnected; // Extend disconnected message style
+    font-size: 0.9rem;
+    color: #aaa;
+    font-style: italic;
+    padding: 1rem 0;
+    text-align: center;
+    width: 100%;
+    min-height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  // Specific overrides for ecg-chart can go here if needed
+  &__stored-info {
+    display: flex;
+    width: 100%;
+    justify-content: flex-end;
+    margin-top: 0.5rem;
+  }
+
+  &__stored-badge {
+    display: inline-block;
+    padding: 0.3rem 0.6rem;
+    background-color: #4caf50;
+    color: white;
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
 }

@@ -2,37 +2,33 @@
   <div class="ecg-chart__header">
     <h3 class="ecg-chart__title">ECG (mV)</h3>
     @if(isConnected()) {
-      <div class="ecg-chart__controls">
-        @if (isRecording()) {
-          <button class="ecg-chart__button ecg-chart__button--stop" (click)="stopRecording()">Stop Recording</button>
-        } @else {
-          <button class="ecg-chart__button ecg-chart__button--start" (click)="startRecording()">Start Recording</button>
-        }
-      </div>
+    <div class="ecg-chart__controls">
+      @if (isRecording()) {
+      <button class="ecg-chart__button ecg-chart__button--stop" (click)="stopRecording()">Detener Grabación</button>
+      } @else {
+      <button class="ecg-chart__button ecg-chart__button--start" (click)="startRecording()">Iniciar Grabación</button>
+      }
+    </div>
     }
   </div>
+
   @if (isConnected()) {
-    @if (chartData()[0].series.length > 0) {
-      <ngx-charts-line-chart
-        class="ecg-chart__chart-container"
-        [view]="view"
-        [scheme]="colorScheme"
-        [results]="chartData()"
-        [legend]="legend"
-        [xAxis]="true"
-        [yAxis]="true"
-        [showXAxisLabel]="showXAxisLabel"
-        [showYAxisLabel]="showYAxisLabel"
-        [xAxisLabel]="xAxisLabel"
-        [yAxisLabel]="yAxisLabel"
-        [timeline]="timeline"
-        [autoScale]="autoScale"
-        [xAxisTickFormatting]="xAxisTickFormatting">
-      </ngx-charts-line-chart>
-    } @else {
-      <div class="ecg-chart__nodata">Waiting for ECG data...</div>
-    }
+  @if (chartData()[0].series.length > 0) {
+  <ngx-charts-line-chart class="ecg-chart__chart-container" [view]="view" [scheme]="colorScheme" [results]="chartData()"
+    [legend]="legend" [xAxis]="true" [yAxis]="true" [showXAxisLabel]="showXAxisLabel" [showYAxisLabel]="showYAxisLabel"
+    [xAxisLabel]="xAxisLabel" [yAxisLabel]="yAxisLabel" [timeline]="timeline" [autoScale]="autoScale"
+    [xAxisTickFormatting]="xAxisTickFormatting">
+  </ngx-charts-line-chart>
   } @else {
-    <div class="ecg-chart__disconnected">Connect device to see chart</div>
+  <div class="ecg-chart__nodata">Esperando datos de ECG...</div>
+  }
+  } @else {
+  <div class="ecg-chart__disconnected">Conecta el dispositivo para ver el gráfico</div>
+  }
+
+  @if (hasStoredEcgs()) {
+  <div class="ecg-chart__stored-info">
+    <span class="ecg-chart__stored-badge">ECGs Guardados Disponibles</span>
+  </div>
   }
 </div>

@@ -1,18 +1,18 @@
 <div class="gyro-display">
-  <h3 class="gyro-display__title">Gyroscope (°/s)</h3>
+  <h3 class="gyro-display__title">Giroscopio (°/s)</h3>
   @if (isConnected()) {
-    @if (gyroData(); as data) {
-      <div class="gyro-display__data">
-        <div class="gyro-display__values">
-          <span>X: {{ data.samples[data.samples.length - 1].x | number:'1.2-2' }}</span>
-          <span>Y: {{ data.samples[data.samples.length - 1].y | number:'1.2-2' }}</span>
-          <span>Z: {{ data.samples[data.samples.length - 1].z | number:'1.2-2' }}</span>
-        </div>
-      </div>
-    } @else {
-      <div class="gyro-display__nodata">Waiting for data...</div>
-    }
+  @if (latestSample(); as sample) {
+  <div class="gyro-display__data">
+    <div class="gyro-display__values">
+      <span class="gyro-display__axis">X: {{ sample.x | number:'1.2-2' }}</span>
+      <span class="gyro-display__axis">Y: {{ sample.y | number:'1.2-2' }}</span>
+      <span class="gyro-display__axis">Z: {{ sample.z | number:'1.2-2' }}</span>
+    </div>
+  </div>
   } @else {
-    <div class="gyro-display__disconnected">Connect device to see data</div>
+  <div class="gyro-display__nodata">Esperando datos...</div>
+  }
+  } @else {
+  <div class="gyro-display__disconnected">Conecta el dispositivo para ver datos</div>
   }
 </div>

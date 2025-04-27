@@ -1,27 +1,16 @@
 <div class="hr-chart">
-  <h3 class="hr-chart__title">Heart Rate (BPM)</h3>
+  <h3 class="hr-chart__title">Ritmo Cardíaco (BPM)</h3>
   @if (isConnected()) {
-    @if (chartData()[0].series.length > 0) {
-      <ngx-charts-line-chart
-        class="hr-chart__chart-container"
-        [view]="view"
-        [scheme]="colorScheme"
-        [results]="chartData()"
-        [legend]="legend"
-        [xAxis]="true"
-        [yAxis]="true"
-        [showXAxisLabel]="showXAxisLabel"
-        [showYAxisLabel]="showYAxisLabel"
-        [xAxisLabel]="xAxisLabel"
-        [yAxisLabel]="yAxisLabel"
-        [timeline]="timeline"
-        [autoScale]="autoScale"
-        [xAxisTickFormatting]="xAxisTickFormatting">
-      </ngx-charts-line-chart>
-    } @else {
-      <div class="hr-chart__nodata">Waiting for HR data...</div>
-    }
+  @if (chartData()[0].series.length > 0) {
+  <ngx-charts-line-chart class="hr-chart__chart-container" [view]="view" [scheme]="colorScheme" [results]="chartData()"
+    [legend]="legend" [xAxis]="true" [yAxis]="true" [showXAxisLabel]="showXAxisLabel" [showYAxisLabel]="showYAxisLabel"
+    [xAxisLabel]="xAxisLabel" [yAxisLabel]="yAxisLabel" [timeline]="timeline" [autoScale]="autoScale"
+    [xAxisTickFormatting]="xAxisTickFormatting">
+  </ngx-charts-line-chart>
   } @else {
-    <div class="hr-chart__disconnected">Connect device to see chart</div>
+  <div class="hr-chart__nodata">Esperando datos de ritmo cardíaco...</div>
+  }
+  } @else {
+  <div class="hr-chart__disconnected">Conecta el dispositivo para ver el gráfico</div>
   }
 </div>

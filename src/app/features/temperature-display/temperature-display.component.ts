@@ -1,21 +1,23 @@
-import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
-import { AsyncPipe, DecimalPipe, DatePipe } from '@angular/common'; // Import necessary pipes
+import { Component, inject, computed } from '@angular/core';
+import { CommonModule, DecimalPipe, DatePipe } from '@angular/common';
 import { MovesenseService } from '../../core/services/movesense.service';
-import { Signal } from '@angular/core'; // Import Signal type
-import { TemperatureData } from '../../core/services/models/movesense.model';
+import { TemperatureData } from '../../core/models/sensor-data.model';
 
 @Component({
     selector: 'app-temperature-display',
     templateUrl: './temperature-display.component.html',
     styleUrls: ['./temperature-display.component.scss'],
-    changeDetection: ChangeDetectionStrategy.OnPush,
-    imports: [AsyncPipe, DecimalPipe, DatePipe], // Add pipes to imports for standalone component
-    // standalone: true is default
+    imports: [CommonModule, DecimalPipe, DatePipe]
 })
 export class TemperatureDisplayComponent {
-    private readonly movesenseService = inject(MovesenseService);
+    private movesenseService = inject(MovesenseService);
 
-    // Expose the signal directly from the service
-    readonly temperatureData: Signal<TemperatureData | null> = this.movesenseService.temperatureData;
-    readonly isConnected: Signal<boolean> = this.movesenseService.isConnected;
+    // Computed signals
+    readonly temperatureData = computed<TemperatureData | null>(
+        () => this.movesenseService.temperatureData()
+    );
+
+    readonly isConnected = computed<boolean>(
+        () => this.movesenseService.isConnected()
+    );
 }

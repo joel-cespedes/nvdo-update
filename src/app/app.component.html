@@ -1,63 +1,68 @@
 <header class="app-header">
-  <h1>Movesense Dashboard</h1>
+  <h1 class="app-header__title">Movesense Dashboard</h1>
 </header>
 
 <main class="app-main">
-  <app-connection></app-connection>
+  <app-connection />
 
-  <!-- Sensor Data Panel -->
+  <!-- Panel de Estado de Sensores -->
   <div class="sensor-panel">
-    <h2 class="sensor-panel__title">Sensor Status</h2>
+    <h2 class="sensor-panel__title">Estado de Sensores</h2>
     <div class="sensor-panel__status-grid">
-      <div class="sensor-status" [class.sensor-status--active]="temperatureStatus() === 'active'"
-        [class.sensor-status--error]="temperatureStatus() === 'error'">
-        <span class="sensor-status__name">Temperature:</span>
-        <span class="sensor-status__value">{{ temperatureStatus() }}</span>
-      </div>
-      <div class="sensor-status" [class.sensor-status--active]="accelerometerStatus() === 'active'"
-        [class.sensor-status--error]="accelerometerStatus() === 'error'">
-        <span class="sensor-status__name">Accelerometer:</span>
-        <span class="sensor-status__value">{{ accelerometerStatus() }}</span>
-      </div>
-      <div class="sensor-status" [class.sensor-status--active]="heartRateStatus() === 'active'"
-        [class.sensor-status--error]="heartRateStatus() === 'error'">
-        <span class="sensor-status__name">Heart Rate:</span>
-        <span class="sensor-status__value">{{ heartRateStatus() }}</span>
-      </div>
-      <div class="sensor-status" [class.sensor-status--active]="gyroscopeStatus() === 'active'"
-        [class.sensor-status--error]="gyroscopeStatus() === 'error'">
-        <span class="sensor-status__name">Gyroscope:</span>
-        <span class="sensor-status__value">{{ gyroscopeStatus() }}</span>
-      </div>
-      <div class="sensor-status" [class.sensor-status--active]="magnetometerStatus() === 'active'"
-        [class.sensor-status--error]="magnetometerStatus() === 'error'">
-        <span class="sensor-status__name">Magnetometer:</span>
-        <span class="sensor-status__value">{{ magnetometerStatus() }}</span>
-      </div>
-      <div class="sensor-status" [class.sensor-status--active]="ecgStatus() === 'active'"
-        [class.sensor-status--error]="ecgStatus() === 'error'">
-        <span class="sensor-status__name">ECG:</span>
-        <span class="sensor-status__value">{{ ecgStatus() }}</span>
-      </div>
+    <div class="sensor-status" [class.sensor-status--active]="temperatureStatus() === 'active'"
+      [class.sensor-status--error]="temperatureStatus() === 'error'">
+      <span class="sensor-status__name">Temperatura:</span>
+      <span class="sensor-status__value">{{ temperatureStatus() }}</span>
+    </div>
+    <div class="sensor-status" [class.sensor-status--active]="accelerometerStatus() === 'active'"
+      [class.sensor-status--error]="accelerometerStatus() === 'error'">
+      <span class="sensor-status__name">Acelerómetro:</span>
+      <span class="sensor-status__value">{{ accelerometerStatus() }}</span>
+    </div>
+    <div class="sensor-status" [class.sensor-status--active]="heartRateStatus() === 'active'"
+      [class.sensor-status--error]="heartRateStatus() === 'error'">
+      <span class="sensor-status__name">Ritmo Cardíaco:</span>
+      <span class="sensor-status__value">{{ heartRateStatus() }}</span>
+    </div>
+    <div class="sensor-status" [class.sensor-status--active]="gyroscopeStatus() === 'active'"
+      [class.sensor-status--error]="gyroscopeStatus() === 'error'">
+      <span class="sensor-status__name">Giroscopio:</span>
+      <span class="sensor-status__value">{{ gyroscopeStatus() }}</span>
+    </div>
+    <div class="sensor-status" [class.sensor-status--active]="magnetometerStatus() === 'active'"
+      [class.sensor-status--error]="magnetometerStatus() === 'error'">
+      <span class="sensor-status__name">Magnetómetro:</span>
+      <span class="sensor-status__value">{{ magnetometerStatus() }}</span>
+    </div>
+    <div class="sensor-status" [class.sensor-status--active]="ecgStatus() === 'active'"
+      [class.sensor-status--error]="ecgStatus() === 'error'">
+      <span class="sensor-status__name">ECG:</span>
+      <span class="sensor-status__value">{{ ecgStatus() }}</span>
+    </div>
     </div>
   </div>
 
-  <!-- Calculated Metrics -->
-  <app-metrics-display></app-metrics-display>
+  <!-- Métricas Calculadas -->
+  <app-metrics-display />
 
-  <!-- Sensor Data Displays -->
+  <!-- Visualizaciones de Datos de Sensores -->
   <div class="sensor-data-area">
-    <app-temperature-display></app-temperature-display>
-    <app-hr-chart></app-hr-chart>
-    <app-acc-chart></app-acc-chart>
-    <app-ecg-chart></app-ecg-chart>
-    <app-gyro-display></app-gyro-display>
-    <app-magn-display></app-magn-display>
+    <app-temperature-display />
+    <app-hr-chart />
+    <app-acc-chart />
+    <app-ecg-chart />
+    <app-gyro-display />
+    <app-magn-display />
   </div>
+
+<!-- ECGs Guardados -->
+@if (hasStoredEcgs()) {
+<app-stored-ecg-list class="stored-ecg-section" />
+}
 
   <router-outlet />
 </main>
 
 <footer class="app-footer">
-  <p>Movesense Angular App</p>
+  <p class="app-footer__text">Movesense Angular App</p>
 </footer>

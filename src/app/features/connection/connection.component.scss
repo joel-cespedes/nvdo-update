@@ -4,7 +4,7 @@
   border-radius: 4px;
   margin-bottom: 1rem;
   background-color: #f9f9f9;
-  font-family: sans-serif; // Basic font
+  font-family: sans-serif;
 
   &__title {
     margin-top: 0;
@@ -20,20 +20,20 @@
     font-weight: bold;
 
     &--connected {
-      background-color: #e8f5e9; // Light green
-      color: #2e7d32; // Dark green
+      background-color: #e8f5e9;
+      color: #2e7d32;
       border: 1px solid #a5d6a7;
     }
 
     &--disconnected {
-      background-color: #fff3e0; // Light orange
-      color: #ef6c00; // Dark orange
+      background-color: #fff3e0;
+      color: #ef6c00;
       border: 1px solid #ffcc80;
     }
 
     &--error {
-      background-color: #ffebee; // Light red
-      color: #c62828; // Dark red
+      background-color: #ffebee;
+      color: #c62828;
       border: 1px solid #ef9a9a;
     }
   }
@@ -47,7 +47,7 @@
     transition: background-color 0.2s ease;
 
     &--connect {
-      background-color: #007bff; // Blue
+      background-color: #007bff;
       color: white;
 
       &:hover:not(:disabled) {
@@ -61,7 +61,7 @@
     }
 
     &--disconnect {
-      background-color: #dc3545; // Red
+      background-color: #dc3545;
       color: white;
 
       &:hover {

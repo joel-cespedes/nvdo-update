@@ -1,0 +1,167 @@
+.stored-ecg {
+  padding: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background-color: #fff;
+  width: 100%;
+
+  &__title {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+    font-weight: 500;
+    color: #333;
+  }
+
+  &__container {
+    display: flex;
+    gap: 1.5rem;
+
+    @media (max-width: 768px) {
+      flex-direction: column;
+    }
+  }
+
+  &__list {
+    flex: 1;
+    max-width: 300px;
+    border-right: 1px solid #eee;
+    padding-right: 1rem;
+
+    @media (max-width: 768px) {
+      max-width: 100%;
+      border-right: none;
+      border-bottom: 1px solid #eee;
+      padding-right: 0;
+      padding-bottom: 1rem;
+      margin-bottom: 1rem;
+    }
+  }
+
+  &__item {
+    padding: 0.8rem;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    margin-bottom: 0.6rem;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.2s ease;
+
+    &:hover {
+      background-color: #f9f9f9;
+    }
+
+    &--selected {
+      background-color: #e3f2fd;
+      border-color: #bbdefb;
+
+      &:hover {
+        background-color: #e3f2fd;
+      }
+    }
+  }
+
+  &__item-info {
+    flex: 1;
+  }
+
+  &__item-name {
+    font-weight: 500;
+    margin-bottom: 0.3rem;
+  }
+
+  &__item-date {
+    font-size: 0.8rem;
+    color: #666;
+  }
+
+  &__item-duration {
+    font-size: 0.8rem;
+    color: #666;
+  }
+
+  &__delete-btn {
+    background-color: transparent;
+    color: #f44336;
+    border: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin-left: 0.5rem;
+
+    &:hover {
+      background-color: rgba(244, 67, 54, 0.1);
+    }
+  }
+
+  &__details {
+    flex: 2;
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__name-edit {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  &__name-input {
+    flex: 1;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9rem;
+  }
+
+  &__save-btn {
+    padding: 0.5rem 1rem;
+    background-color: #4caf50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background-color: #43a047;
+    }
+
+    &:disabled {
+      background-color: #a5d6a7;
+      cursor: not-allowed;
+    }
+  }
+
+  &__viewer {
+    flex: 1;
+    min-height: 300px;
+  }
+
+  &__no-selection {
+    flex: 2;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #9e9e9e;
+    font-style: italic;
+    min-height: 300px;
+    border: 1px dashed #e0e0e0;
+    border-radius: 4px;
+  }
+
+  &__empty {
+    color: #9e9e9e;
+    font-style: italic;
+    padding: 2rem;
+    text-align: center;
+    border: 1px dashed #e0e0e0;
+    border-radius: 4px;
+  }
+}

@@ -1,27 +1,16 @@
 <div class="acc-chart">
-  <h3 class="acc-chart__title">Accelerometer (m/s²)</h3>
+  <h3 class="acc-chart__title">Acelerómetro (m/s²)</h3>
   @if (isConnected()) {
-    @if (chartData()[0].series.length > 0) {
-      <ngx-charts-line-chart
-        class="acc-chart__chart-container"
-        [view]="view"
-        [scheme]="colorScheme"
-        [results]="chartData()"
-        [legend]="legend"
-        [xAxis]="true"
-        [yAxis]="true"
-        [showXAxisLabel]="showXAxisLabel"
-        [showYAxisLabel]="showYAxisLabel"
-        [xAxisLabel]="xAxisLabel"
-        [yAxisLabel]="yAxisLabel"
-        [timeline]="timeline"
-        [autoScale]="autoScale"
-        [xAxisTickFormatting]="xAxisTickFormatting">
-      </ngx-charts-line-chart>
-    } @else {
-      <div class="acc-chart__nodata">Waiting for Accelerometer data...</div>
-    }
+  @if (chartData()[0].series.length > 0) {
+  <ngx-charts-line-chart class="acc-chart__chart-container" [view]="view" [scheme]="colorScheme" [results]="chartData()"
+    [legend]="legend" [xAxis]="true" [yAxis]="true" [showXAxisLabel]="showXAxisLabel" [showYAxisLabel]="showYAxisLabel"
+    [xAxisLabel]="xAxisLabel" [yAxisLabel]="yAxisLabel" [timeline]="timeline" [autoScale]="autoScale"
+    [xAxisTickFormatting]="xAxisTickFormatting">
+  </ngx-charts-line-chart>
   } @else {
-    <div class="acc-chart__disconnected">Connect device to see chart</div>
+  <div class="acc-chart__nodata">Esperando datos del acelerómetro...</div>
+  }
+  } @else {
+  <div class="acc-chart__disconnected">Conecta el dispositivo para ver el gráfico</div>
   }
 </div>

@@ -1,18 +1,18 @@
 <div class="magn-display">
-  <h3 class="magn-display__title">Magnetometer (mgauss)</h3>
+  <h3 class="magn-display__title">Magnetómetro (µT)</h3>
   @if (isConnected()) {
-    @if (magnData(); as data) {
-      <div class="magn-display__data">
-        <div class="magn-display__values">
-          <span>X: {{ data.samples[data.samples.length - 1].x | number:'1.2-2' }}</span>
-          <span>Y: {{ data.samples[data.samples.length - 1].y | number:'1.2-2' }}</span>
-          <span>Z: {{ data.samples[data.samples.length - 1].z | number:'1.2-2' }}</span>
-        </div>
-      </div>
-    } @else {
-      <div class="magn-display__nodata">Waiting for data...</div>
-    }
+  @if (latestSample(); as sample) {
+  <div class="magn-display__data">
+    <div class="magn-display__values">
+      <span class="magn-display__axis">X: {{ sample.x | number:'1.2-2' }}</span>
+      <span class="magn-display__axis">Y: {{ sample.y | number:'1.2-2' }}</span>
+      <span class="magn-display__axis">Z: {{ sample.z | number:'1.2-2' }}</span>
+    </div>
+  </div>
   } @else {
-    <div class="magn-display__disconnected">Connect device to see data</div>
+  <div class="magn-display__nodata">Esperando datos...</div>
+  }
+  } @else {
+  <div class="magn-display__disconnected">Conecta el dispositivo para ver datos</div>
   }
 </div>

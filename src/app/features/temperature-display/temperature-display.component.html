@@ -1,17 +1,17 @@
 <div class="temperature-display">
-  <h3 class="temperature-display__title">Temperature</h3>
+  <h3 class="temperature-display__title">Temperatura</h3>
   @if (isConnected()) {
-    @if (temperatureData(); as data) {
-      <div class="temperature-display__value">
-        {{ data.measurement | number:'1.1-2' }} °C
-      </div>
-      <div class="temperature-display__timestamp">
-        Last updated: {{ data.timestamp | date:'mediumTime' }} <!-- Assuming timestamp is ms -->
-      </div>
-    } @else {
-      <div class="temperature-display__nodata">Waiting for data...</div>
-    }
+  @if (temperatureData(); as data) {
+  <div class="temperature-display__value">
+    {{ data.measurement | number:'1.1-2' }} °C
+  </div>
+  <div class="temperature-display__timestamp">
+    Última actualización: {{ data.timestamp | date:'mediumTime' }}
+  </div>
   } @else {
-    <div class="temperature-display__disconnected">Connect device to see data</div>
+  <div class="temperature-display__nodata">Esperando datos...</div>
+  }
+  } @else {
+  <div class="temperature-display__disconnected">Conecta el dispositivo para ver datos</div>
   }
 </div>
