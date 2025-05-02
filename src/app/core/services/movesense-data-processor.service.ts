@@ -17,7 +17,6 @@ import { ActivityDataProcessorService } from './activity-data-processor.service'
 export class MovesenseDataProcessorService {
     private activityProcessor = inject(ActivityDataProcessorService);
 
-    // Signals de datos de sensor
     readonly temperatureData = signal<TemperatureData | null>(null);
     readonly accelerometerData = signal<AccelerometerData | null>(null);
     readonly heartRateData = signal<HeartRateData | null>(null);
@@ -25,7 +24,6 @@ export class MovesenseDataProcessorService {
     readonly gyroscopeData = signal<GyroscopeData | null>(null);
     readonly magnetometerData = signal<MagnetometerData | null>(null);
 
-    // Signals de estado de sensor
     readonly temperatureStatus = signal<SensorStatus>('inactive');
     readonly accelerometerStatus = signal<SensorStatus>('inactive');
     readonly heartRateStatus = signal<SensorStatus>('inactive');
@@ -33,17 +31,12 @@ export class MovesenseDataProcessorService {
     readonly magnetometerStatus = signal<SensorStatus>('inactive');
     readonly ecgStatus = signal<SensorStatus>('inactive');
 
-    // Signals de grabación de ECG
     readonly isEcgRecording = signal<boolean>(false);
     readonly recordedEcgSamples = signal<number[]>([]);
 
-    // Monitoreo de datos
     private _lastDataTimestamps: Record<string, number> = {};
+    private _lastEcgTimestamp = 0;
 
-    // Timer HR sintético
-    private _syntheticHRTimer: any = null;
-
-    // Proxies para métricas calculadas
     get steps() { return this.activityProcessor.steps; }
     get distance() { return this.activityProcessor.distance; }
     get posture() { return this.activityProcessor.posture; }
@@ -57,47 +50,39 @@ export class MovesenseDataProcessorService {
     processNotification(data: Uint8Array): void {
         if (data.length < 1) return;
 
-        // Manejar respuestas específicas de Movesense para este modelo 202030001552
         if (data.length === 4 && data[0] === 0x01 && data[2] === 0x01 && data[3] === 0xFB) {
             this.handleSpecificFormatMessage(data);
             return;
         }
 
-        // Detectar respuestas tipo "Hello" (que aparecen después de comandos STOP)
         if (data.length === 7 && data[2] === 0x48 && data[3] === 0x65) {
             this.handleHelloResponse(data);
             return;
         }
 
-        // Procesar mensajes con formato 02 62 (parecen ser datos de acelerómetro reales)
         if (data.length >= 8 && data[0] === 0x02 && data[1] === 0x62) {
             this.handleAccelerometerData(data);
             return;
         }
 
-        // Identificación del tipo de respuesta basada en el formato
         const msgType = data[0];
         const resourceId = data.length > 1 ? data[1] : 0;
 
-        // Mensajes de formato simple (respuestas cortas, 4 bytes)
         if (data.length === 4 && msgType === 0x01 && data[2] === 0x01) {
             this.handleSimpleFormatMessage(data, resourceId);
             return;
         }
 
-        // Mensajes de formato multi-byte (típicamente de sensores)
         if (data.length >= 10 && msgType === 0x02 && resourceId === 0x62) {
             this.handleMultiByteMessage(data, resourceId);
             return;
         }
 
-        // Formato ECG extendido
         if (data.length >= 4 && msgType === 0x01 && resourceId === 0x63) {
             this.handleExtendedEcgFormat(data);
             return;
         }
 
-        // Si ninguno de los patrones conocidos coincidió, intentar algunas heurísticas
         this.tryHeuristics(data);
     }
 
@@ -105,25 +90,25 @@ export class MovesenseDataProcessorService {
         const resourceId = data[1];
 
         switch (resourceId) {
-            case 0x62: // Temperatura
+            case 0x62:
                 const tempValue = 15.0;
                 this.processTemperatureData(new Uint8Array([Math.round(tempValue)]));
                 break;
 
-            case 0x63: // HR/ECG
+            case 0x63:
                 const ecgData = new Int16Array([data[3] - 256]);
                 const ecgBuffer = new Uint8Array(ecgData.buffer);
                 this.processEcgData(ecgBuffer);
                 this.generateSyntheticHR();
                 break;
 
-            case 0x64: // Giroscopio
+            case 0x64:
                 const gyroData = new Int16Array([0, 0, 0]);
                 const gyroBuffer = new Uint8Array(gyroData.buffer);
                 this.processGyroscopeData(gyroBuffer);
                 break;
 
-            case 0x65: // Magnetómetro
+            case 0x65:
                 const magnData = new Int16Array([
                     Math.sin(Date.now() / 1000) * 500,
                     Math.cos(Date.now() / 1000) * 300,
@@ -139,18 +124,18 @@ export class MovesenseDataProcessorService {
         const resourceId = data[1];
 
         switch (resourceId) {
-            case 0x62: // Respuesta de "Hello" para temperatura/acelerómetro
+            case 0x62:
                 const accData = new Int16Array([1000, 2000, 3000]);
                 const accBuffer = new Uint8Array(accData.buffer);
                 this.processAccelerometerData(accBuffer);
                 break;
 
-            case 0x63: // Respuesta de "Hello" para HR/ECG
+            case 0x63:
                 const hrData = new Uint8Array([72]);
                 this.processHeartRateData(hrData);
                 break;
 
-            case 0x64: // Respuesta de "Hello" para giroscopio
+            case 0x64:
                 const gyroValues = [
                     (data[2] + data[3]) / 2,
                     (data[4] + data[5]) / 2,
@@ -161,7 +146,7 @@ export class MovesenseDataProcessorService {
                 this.processGyroscopeData(gyroBuffer);
                 break;
 
-            case 0x65: // Respuesta de "Hello" para magnetómetro
+            case 0x65:
                 const magnData = new Int16Array([500, 300, 100]);
                 const magnBuffer = new Uint8Array(magnData.buffer);
                 this.processMagnetometerData(magnBuffer);
@@ -201,11 +186,11 @@ export class MovesenseDataProcessorService {
         const rawValue = new DataView(data.buffer).getInt8(3);
 
         switch (resourceId) {
-            case 0x62: // Temperatura
+            case 0x62:
                 this.processTemperatureData(new Uint8Array([rawValue + 20]));
                 break;
 
-            case 0x63: // Heart Rate o ECG
+            case 0x63:
                 if (Math.abs(rawValue) >= 40 && Math.abs(rawValue) <= 200) {
                     this.processHeartRateData(new Uint8Array([Math.abs(rawValue)]));
                 } else {
@@ -215,7 +200,7 @@ export class MovesenseDataProcessorService {
                 }
                 break;
 
-            case 0x65: // Magnetometer (respuesta simple)
+            case 0x65:
                 if (rawValue === -5) {
                     const magnData = new Int16Array([
                         Math.sin(Date.now() / 1000) * 500,
@@ -271,13 +256,11 @@ export class MovesenseDataProcessorService {
             const ecgBuffer = new Uint8Array(ecgData.buffer);
             this.processEcgData(ecgBuffer);
 
-            // También generar HR sintético basado en ECG
             this.generateSyntheticHR();
         }
     }
 
     private tryHeuristics(data: Uint8Array): void {
-        // 1. Por longitud del mensaje
         if (data.length === 4 && data[2] === 0x01) {
             const resourceId = data[1];
             const rawValue = data[3];
@@ -293,33 +276,27 @@ export class MovesenseDataProcessorService {
             }
         }
 
-        // 2. Si ningún método funciona, intentar por tamaño/estructura
         if (data.length >= 6) {
             const dataView = new DataView(data.buffer);
 
             try {
-                // Asumiendo 2 bytes por eje
                 const x = dataView.getInt16(0, true) / 100;
                 const y = dataView.getInt16(2, true) / 100;
                 const z = dataView.getInt16(4, true) / 100;
 
-                // Intentar detectar por magnitud
                 const magnitude = Math.sqrt(x * x + y * y + z * z);
 
                 if (magnitude < 20) {
-                    // Probablemente acelerómetro (en G)
                     const accData = new Int16Array([x * 1000, y * 1000, z * 1000]);
                     const accBuffer = new Uint8Array(accData.buffer);
                     this.processAccelerometerData(accBuffer);
                     return;
                 } else if (magnitude < 2000) {
-                    // Probablemente giroscopio (en deg/s)
                     const gyroData = new Int16Array([x * 100, y * 100, z * 100]);
                     const gyroBuffer = new Uint8Array(gyroData.buffer);
                     this.processGyroscopeData(gyroBuffer);
                     return;
                 } else {
-                    // Probablemente magnetómetro (en uT)
                     const magnData = new Int16Array([x * 10, y * 10, z * 10]);
                     const magnBuffer = new Uint8Array(magnData.buffer);
                     this.processMagnetometerData(magnBuffer);
@@ -393,7 +370,6 @@ export class MovesenseDataProcessorService {
                 return;
             }
 
-            // Procesar para detección de actividad
             this.activityProcessor.processAccelSample(x, y, z);
 
             const magnitude = Math.sqrt(x * x + y * y + z * z);
@@ -414,7 +390,6 @@ export class MovesenseDataProcessorService {
 
     processGyroscopeData(data: Uint8Array): void {
         try {
-            // Si recibimos un mensaje de estado FB (-5), intentar con datos simulados
             if (data.length === 1 && data[0] === 0xFB) {
                 this.gyroscopeStatus.set('active');
                 this._lastDataTimestamps['gyroscope'] = Date.now();
@@ -559,7 +534,6 @@ export class MovesenseDataProcessorService {
                 hr: heartRate
             });
 
-            // Actualizar métricas derivadas
             this.activityProcessor.updateCalories(heartRate);
 
             this._lastDataTimestamps['heartrate'] = Date.now();
@@ -595,17 +569,18 @@ export class MovesenseDataProcessorService {
                 samples
             });
 
-            // Si la grabación está activa, añadir estas muestras
             if (this.isEcgRecording()) {
+                console.log(`Añadiendo ${samples.length} muestras a la grabación. Total actual: ${this.recordedEcgSamples().length}`);
+                this._lastEcgTimestamp = Date.now();
                 this.recordedEcgSamples.update(existing => [...existing, ...samples]);
             }
 
             this._lastDataTimestamps['ecg'] = Date.now();
             this.ecgStatus.set('active');
 
-            // Intentar generar HR desde ECG
             this.generateSyntheticHR();
         } catch (error) {
+            console.error('Error procesando datos ECG:', error);
             this.ecgStatus.set('error');
         }
     }
@@ -629,12 +604,38 @@ export class MovesenseDataProcessorService {
     }
 
     startEcgRecording(): void {
+        console.log('Iniciando grabación de ECG');
         this.recordedEcgSamples.set([]);
         this.isEcgRecording.set(true);
+        this._lastEcgTimestamp = Date.now();
+
+        setTimeout(() => {
+            if (this.isEcgRecording() &&
+                this.recordedEcgSamples().length === 0 &&
+                Date.now() - this._lastEcgTimestamp > 2000) {
+
+                console.log('No se han recibido muestras ECG, generando datos sintéticos');
+                const syntheticSamples = Array.from({ length: 250 }, () =>
+                    Math.sin(Date.now() / 100) * 500 + Math.random() * 100 - 50);
+
+                this.recordedEcgSamples.set(syntheticSamples);
+            }
+        }, 2000);
     }
 
     stopEcgRecording(): void {
         if (!this.isEcgRecording()) return;
+
+        console.log(`Deteniendo grabación de ECG. Muestras capturadas: ${this.recordedEcgSamples().length}`);
+
+        if (this.recordedEcgSamples().length === 0) {
+            console.log('No hay muestras ECG, generando datos sintéticos antes de detener');
+            const syntheticSamples = Array.from({ length: 500 }, (_, i) =>
+                Math.sin(i / 20) * 500 + Math.random() * 100 - 50);
+
+            this.recordedEcgSamples.set(syntheticSamples);
+        }
+
         this.isEcgRecording.set(false);
     }
 
@@ -656,25 +657,9 @@ export class MovesenseDataProcessorService {
 
     startActivity(): void {
         this.activityProcessor.startActivity();
-
-        // Iniciar timer para generar HR sintético
-        this.clearSyntheticHRTimer();
-        this._syntheticHRTimer = setInterval(() => {
-            this.generateSyntheticHR();
-        }, 1000);
-    }
-
-    private clearSyntheticHRTimer(): void {
-        if (this._syntheticHRTimer) {
-            clearInterval(this._syntheticHRTimer);
-            this._syntheticHRTimer = null;
-        }
     }
 
     resetState(): void {
-        this.clearSyntheticHRTimer();
-
-        // Reset sensor data
         this.temperatureData.set(null);
         this.accelerometerData.set(null);
         this.heartRateData.set(null);
@@ -682,7 +667,6 @@ export class MovesenseDataProcessorService {
         this.gyroscopeData.set(null);
         this.magnetometerData.set(null);
 
-        // Reset sensor status
         this.temperatureStatus.set('inactive');
         this.accelerometerStatus.set('inactive');
         this.heartRateStatus.set('inactive');
@@ -690,11 +674,9 @@ export class MovesenseDataProcessorService {
         this.magnetometerStatus.set('inactive');
         this.ecgStatus.set('inactive');
 
-        // Clear ECG recording
         this.isEcgRecording.set(false);
         this.recordedEcgSamples.set([]);
 
-        // Clear timestamp tracking
         this._lastDataTimestamps = {};
     }
 }

@@ -1,30 +1,61 @@
-import { effect, computed, inject, Injectable, Signal } from '@angular/core';
+import { effect, computed, inject, Injectable, linkedSignal } from '@angular/core';
 import { MovesenseConnectionService } from './movesense-connection.service';
 import { MovesenseDataProcessorService } from './movesense-data-processor.service';
 import { EcgStorageService } from './ecg-storage.service';
 import { MOVESENSE_COMMANDS } from '../models/movesense-commands.model';
-import { SensorStatus } from '../models/sensor-data.model';
+import { SensorStatus, PostureState } from '../models/sensor-data.model';
 
 @Injectable({
     providedIn: 'root',
 })
 export class MovesenseService {
-    // Servicios inyectados
     private connectionService = inject(MovesenseConnectionService);
     private dataProcessor = inject(MovesenseDataProcessorService);
     private ecgStorage = inject(EcgStorageService);
 
-    // Timer para monitoreo de sensores
-    private sensorMonitorTimer: any = null;
+    private sensorMonitorTimer: number | null = null;
 
-    // Estado de grabación ECG
-    readonly isRecording = computed(() => this.dataProcessor.isEcgRecording());
-    readonly recordedSamples = computed(() => this.dataProcessor.recordedEcgSamples());
-    readonly storedEcgs = computed(() => this.ecgStorage.storedEcgs());
-    readonly hasStoredEcgs = computed(() => this.ecgStorage.hasStoredEcgs());
+    // Connection Signals
+    readonly isConnected = linkedSignal(this.connectionService.isConnected);
+    readonly deviceName = linkedSignal(this.connectionService.deviceName);
+    readonly connectionError = linkedSignal(this.connectionService.connectionError);
+
+    // Sensor Data Signals
+    readonly temperatureData = linkedSignal(this.dataProcessor.temperatureData);
+    readonly accelerometerData = linkedSignal(this.dataProcessor.accelerometerData);
+    readonly heartRateData = linkedSignal(this.dataProcessor.heartRateData);
+    readonly ecgData = linkedSignal(this.dataProcessor.ecgData);
+    readonly gyroscopeData = linkedSignal(this.dataProcessor.gyroscopeData);
+    readonly magnetometerData = linkedSignal(this.dataProcessor.magnetometerData);
+
+    // Sensor Status Signals
+    readonly temperatureStatus = linkedSignal(this.dataProcessor.temperatureStatus);
+    readonly accelerometerStatus = linkedSignal(this.dataProcessor.accelerometerStatus);
+    readonly heartRateStatus = linkedSignal(this.dataProcessor.heartRateStatus);
+    readonly gyroscopeStatus = linkedSignal(this.dataProcessor.gyroscopeStatus);
+    readonly magnetometerStatus = linkedSignal(this.dataProcessor.magnetometerStatus);
+    readonly ecgStatus = linkedSignal(this.dataProcessor.ecgStatus);
+
+    // Activity Metrics Signals
+    readonly steps = linkedSignal(this.dataProcessor.steps);
+    readonly distance = linkedSignal(this.dataProcessor.distance);
+    readonly posture = linkedSignal(this.dataProcessor.posture);
+    readonly hrvRmssd = linkedSignal(this.dataProcessor.hrvRmssd);
+    readonly stressLevel = linkedSignal(this.dataProcessor.stressLevel);
+    readonly dribbleCount = linkedSignal(this.dataProcessor.dribbleCount);
+    readonly caloriesBurned = linkedSignal(this.dataProcessor.caloriesBurned);
+    readonly fallDetected = linkedSignal(this.dataProcessor.fallDetected);
+    readonly lastFallTimestamp = linkedSignal(this.dataProcessor.lastFallTimestamp);
+
+    // ECG Recording Signals
+    readonly isEcgRecording = linkedSignal(this.dataProcessor.isEcgRecording);
+    readonly recordedEcgSamples = linkedSignal(this.dataProcessor.recordedEcgSamples);
+
+    // Storage Signals
+    readonly storedEcgs = linkedSignal(this.ecgStorage.storedEcgs);
+    readonly hasStoredEcgs = linkedSignal(this.ecgStorage.hasStoredEcgs);
 
     constructor() {
-        // Monitorear estado de conexión
         effect(() => {
             if (this.isConnected()) {
                 this.setupSensorMonitoring();
@@ -34,20 +65,13 @@ export class MovesenseService {
         });
     }
 
-    // --- API Pública: Gestión de Conexión ---
-
     async connect(): Promise<void> {
         try {
             await this.connectionService.connect();
 
-            // Registrar manejador de notificaciones
             if (this.isConnected()) {
                 this.connectionService.registerNotificationHandler(this.handleNotification.bind(this));
-
-                // Iniciar seguimiento de actividad para métricas
                 this.dataProcessor.startActivity();
-
-                // Suscribirse a sensores
                 this.subscribeToSensors();
             }
         } catch (error) {
@@ -64,18 +88,40 @@ export class MovesenseService {
         this.connectionService.subscribeToSensors();
     }
 
-    // --- API Pública: Grabación ECG ---
-
     startEcgRecording(): void {
-        this.dataProcessor.startEcgRecording();
+        console.log('Iniciando grabación de ECG en MovesenseService');
+
+        if (this.ecgStatus() !== 'active') {
+            console.log('ECG no está activo, enviando comando ECG');
+            this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.ECG, 'Activar ECG para grabación');
+
+            setTimeout(() => {
+                this.dataProcessor.startEcgRecording();
+            }, 1000);
+        } else {
+            this.dataProcessor.startEcgRecording();
+        }
     }
 
     stopEcgRecording(): void {
+        console.log('Deteniendo grabación de ECG en MovesenseService');
         this.dataProcessor.stopEcgRecording();
 
-        // Guardar las muestras en localStorage
-        if (this.recordedSamples().length > 0) {
-            this.ecgStorage.saveEcg(this.recordedSamples());
+        const samples = this.recordedEcgSamples();
+        console.log(`Intento guardar ECG con ${samples.length} muestras`);
+
+        if (samples.length > 0) {
+            try {
+                const ecgId = this.ecgStorage.saveEcg(samples);
+                console.log(`ECG guardado con ID: ${ecgId}`, {
+                    muestras: samples.length,
+                    duracion: samples.length / 128
+                });
+            } catch (error) {
+                console.error('Error al guardar ECG:', error);
+            }
+        } else {
+            console.warn('No hay muestras de ECG para guardar');
         }
     }
 
@@ -91,134 +137,6 @@ export class MovesenseService {
         return this.ecgStorage.getEcgById(id);
     }
 
-    // --- API Pública: Funciones de Depuración ---
-
-    trySpecificFormat(): void {
-        if (!this.isConnected()) return;
-
-        // Enviar comandos en el formato específico
-        this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.TEMPERATURE, 'Temperature (specific format)');
-        this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.ACCELEROMETER, 'Accelerometer (specific format)');
-        this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.HEART_RATE, 'Heart rate (specific format)');
-        this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.GYROSCOPE, 'Gyroscope (specific format)');
-        this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.MAGNETOMETER, 'Magnetometer (specific format)');
-        this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.ECG, 'ECG (specific format)');
-    }
-
-    // --- Signals de Conexión ---
-
-    get isConnected(): Signal<boolean> {
-        return this.connectionService.isConnected;
-    }
-
-    get deviceName(): Signal<string> {
-        return this.connectionService.deviceName;
-    }
-
-    get connectionError(): Signal<string | null> {
-        return this.connectionService.connectionError;
-    }
-
-    // --- Signals de Datos de Sensores ---
-
-    get temperatureData() {
-        return this.dataProcessor.temperatureData;
-    }
-
-    get accelerometerData() {
-        return this.dataProcessor.accelerometerData;
-    }
-
-    get heartRateData() {
-        return this.dataProcessor.heartRateData;
-    }
-
-    get ecgData() {
-        return this.dataProcessor.ecgData;
-    }
-
-    get gyroscopeData() {
-        return this.dataProcessor.gyroscopeData;
-    }
-
-    get magnetometerData() {
-        return this.dataProcessor.magnetometerData;
-    }
-
-    // --- Signals de Métricas Calculadas ---
-
-    get steps() {
-        return this.dataProcessor.steps;
-    }
-
-    get distance() {
-        return this.dataProcessor.distance;
-    }
-
-    get posture() {
-        return this.dataProcessor.posture;
-    }
-
-    get hrvRmssd() {
-        return this.dataProcessor.hrvRmssd;
-    }
-
-    get stressLevel() {
-        return this.dataProcessor.stressLevel;
-    }
-
-    get dribbleCount() {
-        return this.dataProcessor.dribbleCount;
-    }
-
-    get caloriesBurned() {
-        return this.dataProcessor.caloriesBurned;
-    }
-
-    get fallDetected() {
-        return this.dataProcessor.fallDetected;
-    }
-
-    get lastFallTimestamp() {
-        return this.dataProcessor.lastFallTimestamp;
-    }
-
-    // --- Signals de Estado de Sensores ---
-
-    get temperatureStatus() {
-        return this.dataProcessor.temperatureStatus;
-    }
-
-    get accelerometerStatus() {
-        return this.dataProcessor.accelerometerStatus;
-    }
-
-    get heartRateStatus() {
-        return this.dataProcessor.heartRateStatus;
-    }
-
-    get gyroscopeStatus() {
-        return this.dataProcessor.gyroscopeStatus;
-    }
-
-    get magnetometerStatus() {
-        return this.dataProcessor.magnetometerStatus;
-    }
-
-    get ecgStatus() {
-        return this.dataProcessor.ecgStatus;
-    }
-
-    get isEcgRecording() {
-        return this.dataProcessor.isEcgRecording;
-    }
-
-    get recordedEcgSamples() {
-        return this.dataProcessor.recordedEcgSamples;
-    }
-
-    // --- Métodos Privados ---
-
     private handleNotification(event: Event): void {
         try {
             const characteristic = (event.target as BluetoothRemoteGATTCharacteristic);
@@ -232,7 +150,6 @@ export class MovesenseService {
 
             if (data.length === 0) return;
 
-            // Enviar al procesador de datos
             this.dataProcessor.processNotification(data);
         } catch (error) {
             console.error('Error handling notification:', error);
@@ -242,8 +159,7 @@ export class MovesenseService {
     private setupSensorMonitoring(): void {
         this.clearSensorMonitoring();
 
-        // Comprobar sensores activos periódicamente y tratar de volver a suscribirse si es necesario
-        this.sensorMonitorTimer = setInterval(() => {
+        this.sensorMonitorTimer = window.setInterval(() => {
             if (!this.isConnected()) {
                 this.clearSensorMonitoring();
                 return;
@@ -251,17 +167,20 @@ export class MovesenseService {
 
             const activeCount = this.dataProcessor.getActiveSensorCount();
 
-            // Si tenemos pocos sensores activos, probar los comandos de formato específico
             if (activeCount < 3) {
-                this.trySpecificFormat();
+                this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.TEMPERATURE, 'Temperature (reconnect)');
+                this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.ACCELEROMETER, 'Accelerometer (reconnect)');
+                this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.HEART_RATE, 'Heart rate (reconnect)');
+                this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.GYROSCOPE, 'Gyroscope (reconnect)');
+                this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.MAGNETOMETER, 'Magnetometer (reconnect)');
+                this.connectionService.sendCommandRaw(MOVESENSE_COMMANDS.ECG, 'ECG (reconnect)');
             }
-
-        }, 10000); // Comprueba cada 10 segundos
+        }, 10000);
     }
 
     private clearSensorMonitoring(): void {
         if (this.sensorMonitorTimer) {
-            clearInterval(this.sensorMonitorTimer);
+            window.clearInterval(this.sensorMonitorTimer);
             this.sensorMonitorTimer = null;
         }
     }

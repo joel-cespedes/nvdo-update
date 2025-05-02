@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, effect } from '@angular/core';
+import { Component, inject, signal, effect, linkedSignal } from '@angular/core';
 import { NgxChartsModule, ScaleType } from '@swimlane/ngx-charts';
 import { CommonModule } from '@angular/common';
 import { EcgData } from '../../core/models/sensor-data.model';
@@ -20,20 +20,23 @@ interface ChartSeriesData {
     selector: 'app-ecg-chart',
     templateUrl: './ecg-chart.component.html',
     styleUrls: ['./ecg-chart.component.scss'],
+    standalone: true,
     imports: [NgxChartsModule, CommonModule]
 })
 export class EcgChartComponent {
     private movesenseService = inject(MovesenseService);
 
-    // Signals de datos
+    // Chart data signal
     readonly chartData = signal<ChartData[]>([
         { name: 'ECG', series: [] }
     ]);
 
-    // Signals de grabación
-    readonly hasStoredEcgs = computed(() => this.movesenseService.hasStoredEcgs());
+    // Link service signals directly
+    readonly hasStoredEcgs = linkedSignal(this.movesenseService.hasStoredEcgs);
+    readonly isConnected = linkedSignal(this.movesenseService.isConnected);
+    readonly isRecording = linkedSignal(this.movesenseService.isEcgRecording);
 
-    // Configuración del chart
+    // Chart configuration
     readonly view: [number, number] = [700, 300];
     readonly legend = false;
     readonly showXAxisLabel = true;
@@ -49,12 +52,8 @@ export class EcgChartComponent {
     };
     readonly autoScale = true;
 
-    // Exponer signals de conexión y grabación
-    readonly isConnected = computed(() => this.movesenseService.isConnected());
-    readonly isRecording = computed(() => this.movesenseService.isEcgRecording());
-
     constructor() {
-        // Effect para actualizar chart cuando hay nuevos datos de ECG
+        // Effect to update chart when new ECG data arrives
         effect(() => {
             const newEcgData = this.movesenseService.ecgData();
             if (newEcgData && this.isConnected() && newEcgData.samples.length > 0) {
@@ -62,7 +61,7 @@ export class EcgChartComponent {
             }
         });
 
-        // Effect para limpiar datos del chart cuando se desconecta
+        // Effect to clear chart data when disconnected
         effect(() => {
             if (!this.isConnected()) {
                 this.chartData.set([{ name: 'ECG', series: [] }]);
@@ -75,7 +74,7 @@ export class EcgChartComponent {
             const currentSeries = currentChartData[0].series;
             const newPoints: ChartSeriesData[] = [];
 
-            // La frecuencia de muestreo debe ser conocida
+            // Sample rate should be known
             const sampleRateHz = 128;
             const timePerSampleMs = 1000 / sampleRateHz;
             let currentTimestampMs = newData.timestamp;
@@ -88,14 +87,14 @@ export class EcgChartComponent {
                 currentTimestampMs += timePerSampleMs;
             }
 
-            // Añadir nuevos puntos y limitar longitud de historial
+            // Add new points and limit history length
             const updatedSeries = [...currentSeries, ...newPoints].slice(-MAX_ECG_DATA_POINTS);
 
             return [{ name: 'ECG', series: updatedSeries }];
         });
     }
 
-    // Formateo de ejes
+    // Axis formatting
     xAxisTickFormatting(val: string | Date): string {
         if (val instanceof Date) {
             return val.toLocaleTimeString([], {
@@ -108,7 +107,7 @@ export class EcgChartComponent {
         return String(val);
     }
 
-    // Métodos de control de grabación
+    // Recording control methods
     startRecording(): void {
         this.movesenseService.startEcgRecording();
     }

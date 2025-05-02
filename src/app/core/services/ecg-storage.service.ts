@@ -18,7 +18,7 @@ export class EcgStorageService {
 
     saveEcg(samples: number[], timestamp = Date.now()): string {
         const id = crypto.randomUUID();
-        const duration = samples.length / 128; // Asumiendo frecuencia de muestreo de 128Hz
+        const duration = samples.length / 128;
 
         const newEcg: StoredEcg = {
             id,
@@ -85,9 +85,36 @@ export class EcgStorageService {
 
     private saveToStorage(): void {
         try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(this.storedEcgsSignal()));
+            const dataToStore = JSON.stringify(this.storedEcgsSignal());
+            console.log('Guardando en localStorage:', {
+                key: STORAGE_KEY,
+                dataLength: dataToStore.length,
+                numEcgs: this.storedEcgsSignal().length
+            });
+            localStorage.setItem(STORAGE_KEY, dataToStore);
+            console.log('ECG guardado correctamente en localStorage');
         } catch (error) {
             console.error('Error saving ECG data to storage:', error);
+
+            if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+                console.warn('localStorage lleno, limitando muestras ECG');
+
+                const limitedEcgs = this.storedEcgsSignal().map(ecg => {
+                    if (ecg.samples.length > 2000) {
+                        return {
+                            ...ecg,
+                            samples: ecg.samples.slice(0, 2000),
+                            duration: 2000 / 128
+                        };
+                    }
+                    return ecg;
+                });
+
+                this.storedEcgsSignal.set(limitedEcgs);
+                const reducedData = JSON.stringify(limitedEcgs);
+                localStorage.setItem(STORAGE_KEY, reducedData);
+                console.log('ECG guardado con muestras limitadas');
+            }
         }
     }
 

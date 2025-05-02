@@ -1,4 +1,4 @@
-import { Component, Input, inject, computed, signal, SimpleChanges, OnChanges } from '@angular/core';
+import { Component, Input, inject, signal, SimpleChanges, OnChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { NgxChartsModule, ScaleType } from '@swimlane/ngx-charts';
 import { MovesenseService } from '../../core/services/movesense.service';
@@ -26,10 +26,11 @@ export class StoredEcgViewerComponent implements OnChanges {
 
   private movesenseService = inject(MovesenseService);
 
-  ecgData = signal<StoredEcg | null>(null);
-  chartData = signal<ChartData[]>([{ name: 'ECG', series: [] }]);
+  // Component state signals
+  readonly ecgData = signal<StoredEcg | null>(null);
+  readonly chartData = signal<ChartData[]>([{ name: 'ECG', series: [] }]);
 
-  // Configuración del gráfico
+  // Chart configuration
   readonly view: [number, number] = [700, 300];
   readonly legend = false;
   readonly showXAxisLabel = true;
@@ -72,14 +73,14 @@ export class StoredEcgViewerComponent implements OnChanges {
 
   private generateChartData(ecg: StoredEcg): void {
     const series: ChartSeriesData[] = [];
-    const sampleRateHz = 128; // Frecuencia de muestreo asumida
+    const sampleRateHz = 128; // Assumed sample rate
     const timePerSampleMs = 1000 / sampleRateHz;
 
-    // Tomar hasta 2000 muestras para rendimiento
+    // Take up to 2000 samples for performance
     const maxSamples = 2000;
     const interval = ecg.samples.length > maxSamples ? Math.floor(ecg.samples.length / maxSamples) : 1;
 
-    // Generar timestamp para cada muestra
+    // Generate timestamp for each sample
     let currentTimestampMs = ecg.timestamp;
 
     for (let i = 0; i < ecg.samples.length; i += interval) {
@@ -94,7 +95,7 @@ export class StoredEcgViewerComponent implements OnChanges {
     this.chartData.set([{ name: 'ECG', series }]);
   }
 
-  // Formateo de ejes
+  // Axis formatting
   xAxisTickFormatting(val: string | Date): string {
     if (val instanceof Date) {
       return val.toLocaleTimeString([], {

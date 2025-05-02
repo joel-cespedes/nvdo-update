@@ -1,4 +1,4 @@
-import { Component, inject, computed, signal } from '@angular/core';
+import { Component, inject, signal, linkedSignal } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { StoredEcg } from '../../core/models/ecg-storage.model';
 import { MovesenseService } from '../../core/services/movesense.service';
@@ -15,11 +15,13 @@ import { StoredEcgViewerComponent } from '../stored-ecg-viewer/stored-ecg-viewer
 export class StoredEcgListComponent {
   private movesenseService = inject(MovesenseService);
 
-  readonly storedEcgs = computed(() => this.movesenseService.storedEcgs());
-  readonly hasStoredEcgs = computed(() => this.movesenseService.hasStoredEcgs());
+  // Link storage signals
+  readonly storedEcgs = linkedSignal(this.movesenseService.storedEcgs);
+  readonly hasStoredEcgs = linkedSignal(this.movesenseService.hasStoredEcgs);
 
-  selectedEcgId = signal<string | null>(null);
-  newEcgName = signal<string>('');
+  // Component state signals
+  readonly selectedEcgId = signal<string | null>(null);
+  readonly newEcgName = signal<string>('');
 
   selectEcg(id: string): void {
     if (this.selectedEcgId() === id) {
@@ -27,7 +29,7 @@ export class StoredEcgListComponent {
     } else {
       this.selectedEcgId.set(id);
 
-      // Obtener el ECG seleccionado para establecer un nombre predeterminado
+      // Set default name from selected ECG
       const ecg = this.movesenseService.getEcgById(id);
       if (ecg) {
         this.newEcgName.set(ecg.name || '');
@@ -43,7 +45,7 @@ export class StoredEcgListComponent {
   }
 
   deleteEcg(id: string, event: Event): void {
-    event.stopPropagation(); // Evitar que se seleccione al eliminar
+    event.stopPropagation(); // Prevent selection on delete
 
     if (confirm('¿Estás seguro de que deseas eliminar este ECG?')) {
       this.movesenseService.deleteStoredEcg(id);

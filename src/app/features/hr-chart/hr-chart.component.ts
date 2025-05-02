@@ -1,10 +1,10 @@
-import { Component, inject, signal, computed, effect } from '@angular/core';
+import { Component, inject, signal, effect, linkedSignal } from '@angular/core';
 import { NgxChartsModule, ScaleType } from '@swimlane/ngx-charts';
 import { CommonModule } from '@angular/common';
 import { MovesenseService } from '../../core/services/movesense.service';
 import { HeartRateData } from '../../core/models/sensor-data.model';
 
-// Interfaces para formato de datos del gráfico
+// Chart data interfaces
 interface ChartData {
     name: string;
     series: ChartSeriesData[];
@@ -21,15 +21,19 @@ const MAX_DATA_POINTS = 60;
     selector: 'app-hr-chart',
     templateUrl: './hr-chart.component.html',
     styleUrls: ['./hr-chart.component.scss'],
+    standalone: true,
     imports: [NgxChartsModule, CommonModule]
 })
 export class HrChartComponent {
     private movesenseService = inject(MovesenseService);
 
-    // Signal para datos del gráfico
+    // Chart data signal
     readonly chartData = signal<ChartData[]>([{ name: 'Ritmo Cardíaco', series: [] }]);
 
-    // Configuración del gráfico
+    // Link connection status signal
+    readonly isConnected = linkedSignal(this.movesenseService.isConnected);
+
+    // Chart configuration
     readonly view: [number, number] = [700, 300];
     readonly legend = false;
     readonly showXAxisLabel = true;
@@ -45,11 +49,8 @@ export class HrChartComponent {
     };
     readonly autoScale = true;
 
-    // Computed signal para el estado de conexión
-    readonly isConnected = computed(() => this.movesenseService.isConnected());
-
     constructor() {
-        // Effect para actualizar datos del gráfico cuando llegan nuevos datos de HR
+        // Effect to update chart data when new HR data arrives
         effect(() => {
             const newHrData = this.movesenseService.heartRateData();
             if (newHrData && this.isConnected()) {
@@ -57,7 +58,7 @@ export class HrChartComponent {
             }
         });
 
-        // Effect para limpiar datos del gráfico al desconectar
+        // Effect to clear chart data when disconnected
         effect(() => {
             if (!this.isConnected()) {
                 this.chartData.set([{ name: 'Ritmo Cardíaco', series: [] }]);
@@ -73,14 +74,14 @@ export class HrChartComponent {
                 value: newData.hr
             };
 
-            // Añadir nuevo punto y limitar longitud de historial
+            // Add new point and limit history length
             const updatedSeries = [...series, newPoint].slice(-MAX_DATA_POINTS);
 
             return [{ name: 'Ritmo Cardíaco', series: updatedSeries }];
         });
     }
 
-    // Formateo personalizado para ticks del eje X
+    // Custom formatting for X-axis ticks
     xAxisTickFormatting(val: string | Date): string {
         if (val instanceof Date) {
             return val.toLocaleTimeString();

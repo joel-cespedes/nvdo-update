@@ -9,36 +9,36 @@
   <div class="sensor-panel">
     <h2 class="sensor-panel__title">Estado de Sensores</h2>
     <div class="sensor-panel__status-grid">
-    <div class="sensor-status" [class.sensor-status--active]="temperatureStatus() === 'active'"
-      [class.sensor-status--error]="temperatureStatus() === 'error'">
-      <span class="sensor-status__name">Temperatura:</span>
-      <span class="sensor-status__value">{{ temperatureStatus() }}</span>
-    </div>
-    <div class="sensor-status" [class.sensor-status--active]="accelerometerStatus() === 'active'"
-      [class.sensor-status--error]="accelerometerStatus() === 'error'">
-      <span class="sensor-status__name">Acelerómetro:</span>
-      <span class="sensor-status__value">{{ accelerometerStatus() }}</span>
-    </div>
-    <div class="sensor-status" [class.sensor-status--active]="heartRateStatus() === 'active'"
-      [class.sensor-status--error]="heartRateStatus() === 'error'">
-      <span class="sensor-status__name">Ritmo Cardíaco:</span>
-      <span class="sensor-status__value">{{ heartRateStatus() }}</span>
-    </div>
-    <div class="sensor-status" [class.sensor-status--active]="gyroscopeStatus() === 'active'"
-      [class.sensor-status--error]="gyroscopeStatus() === 'error'">
-      <span class="sensor-status__name">Giroscopio:</span>
-      <span class="sensor-status__value">{{ gyroscopeStatus() }}</span>
-    </div>
-    <div class="sensor-status" [class.sensor-status--active]="magnetometerStatus() === 'active'"
-      [class.sensor-status--error]="magnetometerStatus() === 'error'">
-      <span class="sensor-status__name">Magnetómetro:</span>
-      <span class="sensor-status__value">{{ magnetometerStatus() }}</span>
-    </div>
-    <div class="sensor-status" [class.sensor-status--active]="ecgStatus() === 'active'"
-      [class.sensor-status--error]="ecgStatus() === 'error'">
-      <span class="sensor-status__name">ECG:</span>
-      <span class="sensor-status__value">{{ ecgStatus() }}</span>
-    </div>
+      <div class="sensor-status" [class.sensor-status--active]="temperatureStatus() === 'active'"
+        [class.sensor-status--error]="temperatureStatus() === 'error'">
+        <span class="sensor-status__name">Temperatura:</span>
+        <span class="sensor-status__value">{{ temperatureStatus() }}</span>
+      </div>
+      <div class="sensor-status" [class.sensor-status--active]="accelerometerStatus() === 'active'"
+        [class.sensor-status--error]="accelerometerStatus() === 'error'">
+        <span class="sensor-status__name">Acelerómetro:</span>
+        <span class="sensor-status__value">{{ accelerometerStatus() }}</span>
+      </div>
+      <div class="sensor-status" [class.sensor-status--active]="heartRateStatus() === 'active'"
+        [class.sensor-status--error]="heartRateStatus() === 'error'">
+        <span class="sensor-status__name">Ritmo Cardíaco:</span>
+        <span class="sensor-status__value">{{ heartRateStatus() }}</span>
+      </div>
+      <div class="sensor-status" [class.sensor-status--active]="gyroscopeStatus() === 'active'"
+        [class.sensor-status--error]="gyroscopeStatus() === 'error'">
+        <span class="sensor-status__name">Giroscopio:</span>
+        <span class="sensor-status__value">{{ gyroscopeStatus() }}</span>
+      </div>
+      <div class="sensor-status" [class.sensor-status--active]="magnetometerStatus() === 'active'"
+        [class.sensor-status--error]="magnetometerStatus() === 'error'">
+        <span class="sensor-status__name">Magnetómetro:</span>
+        <span class="sensor-status__value">{{ magnetometerStatus() }}</span>
+      </div>
+      <div class="sensor-status" [class.sensor-status--active]="ecgStatus() === 'active'"
+        [class.sensor-status--error]="ecgStatus() === 'error'">
+        <span class="sensor-status__name">ECG:</span>
+        <span class="sensor-status__value">{{ ecgStatus() }}</span>
+      </div>
     </div>
   </div>
 
@@ -55,10 +55,10 @@
     <app-magn-display />
   </div>
 
-<!-- ECGs Guardados -->
-@if (hasStoredEcgs()) {
-<app-stored-ecg-list class="stored-ecg-section" />
-}
+  <!-- ECGs Guardados -->
+  @if (hasStoredEcgs()) {
+  <app-stored-ecg-list class="stored-ecg-section" />
+  }
 
   <router-outlet />
 </main>

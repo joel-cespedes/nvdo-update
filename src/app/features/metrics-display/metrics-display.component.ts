@@ -1,4 +1,4 @@
-import { Component, inject, computed } from '@angular/core';
+import { Component, inject, linkedSignal } from '@angular/core';
 import { CommonModule, DecimalPipe, DatePipe } from '@angular/common';
 import { MovesenseService } from '../../core/services/movesense.service';
 
@@ -6,24 +6,25 @@ import { MovesenseService } from '../../core/services/movesense.service';
     selector: 'app-metrics-display',
     templateUrl: './metrics-display.component.html',
     styleUrls: ['./metrics-display.component.scss'],
+    standalone: true,
     imports: [CommonModule, DecimalPipe, DatePipe]
 })
 export class MetricsDisplayComponent {
     private movesenseService = inject(MovesenseService);
 
-    // Computed signals para métricas calculadas
-    readonly steps = computed(() => this.movesenseService.steps());
-    readonly distance = computed(() => this.movesenseService.distance());
-    readonly posture = computed(() => this.movesenseService.posture());
-    readonly hrvRmssd = computed(() => this.movesenseService.hrvRmssd());
-    readonly stressLevel = computed(() => this.movesenseService.stressLevel());
-    readonly dribbleCount = computed(() => this.movesenseService.dribbleCount());
-    readonly caloriesBurned = computed(() => this.movesenseService.caloriesBurned());
-    readonly fallDetected = computed(() => this.movesenseService.fallDetected());
-    readonly lastFallTimestamp = computed(() => this.movesenseService.lastFallTimestamp());
-    readonly isConnected = computed(() => this.movesenseService.isConnected());
+    // Link all metrics signals directly from the service
+    readonly steps = linkedSignal(this.movesenseService.steps);
+    readonly distance = linkedSignal(this.movesenseService.distance);
+    readonly posture = linkedSignal(this.movesenseService.posture);
+    readonly hrvRmssd = linkedSignal(this.movesenseService.hrvRmssd);
+    readonly stressLevel = linkedSignal(this.movesenseService.stressLevel);
+    readonly dribbleCount = linkedSignal(this.movesenseService.dribbleCount);
+    readonly caloriesBurned = linkedSignal(this.movesenseService.caloriesBurned);
+    readonly fallDetected = linkedSignal(this.movesenseService.fallDetected);
+    readonly lastFallTimestamp = linkedSignal(this.movesenseService.lastFallTimestamp);
+    readonly isConnected = linkedSignal(this.movesenseService.isConnected);
 
-    // Método de ayuda para formateo de timestamp de caída
+    // Helper method for formatting fall timestamp
     formatFallTime(timestamp: number | null): string {
         if (timestamp === null) return 'Ninguna detectada';
         const date = new Date(timestamp);

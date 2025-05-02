@@ -1,27 +1,22 @@
-import { Component, inject, computed } from '@angular/core';
+import { Component, inject, computed, linkedSignal } from '@angular/core';
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { MovesenseService } from '../../core/services/movesense.service';
-import { MagnetometerData } from '../../core/models/sensor-data.model';
 
 @Component({
     selector: 'app-magn-display',
     templateUrl: './magn-display.component.html',
     styleUrls: ['./magn-display.component.scss'],
+    standalone: true,
     imports: [CommonModule, DecimalPipe]
 })
 export class MagnDisplayComponent {
     private movesenseService = inject(MovesenseService);
 
-    // Computed signals
-    readonly magnData = computed<MagnetometerData | null>(
-        () => this.movesenseService.magnetometerData()
-    );
+    // Link signals from service
+    readonly magnData = linkedSignal(this.movesenseService.magnetometerData);
+    readonly isConnected = linkedSignal(this.movesenseService.isConnected);
 
-    readonly isConnected = computed<boolean>(
-        () => this.movesenseService.isConnected()
-    );
-
-    // Computed signal para datos de muestras más recientes
+    // Computed for latest sample data
     readonly latestSample = computed(() => {
         const data = this.magnData();
         if (data && data.samples && data.samples.length > 0) {

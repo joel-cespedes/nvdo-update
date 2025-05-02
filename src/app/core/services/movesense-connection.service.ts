@@ -1,35 +1,27 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 import { MOVESENSE_BLE, MOVESENSE_METHOD, createMovesenseCommand } from '../models/movesense-ble.model';
 import { MOVESENSE_COMMANDS } from '../models/movesense-commands.model';
-import { MovesenseDataProcessorService } from './movesense-data-processor.service';
 
 @Injectable({
     providedIn: 'root',
 })
 export class MovesenseConnectionService {
-    // Servicios inyectados
-    private dataProcessor = inject(MovesenseDataProcessorService);
-
-    // Signals de estado de conexión
     readonly isConnected = signal<boolean>(false);
     readonly deviceName = signal<string>('');
     readonly connectionError = signal<string | null>(null);
     readonly reconnectAttempts = signal<number>(0);
 
-    // Propiedades BLE
     private bleServer: BluetoothRemoteGATTServer | null = null;
     private commandChar: BluetoothRemoteGATTCharacteristic | null = null;
     private notifyChar: BluetoothRemoteGATTCharacteristic | null = null;
     private device: BluetoothDevice | null = null;
     private notificationHandler: ((event: Event) => void) | null = null;
 
-    // Cola de comandos
     private commandQueue: { command: Uint8Array, description: string }[] = [];
     private isProcessingQueue = false;
     private lastCommandTime = 0;
 
-    // Reconexión
-    private reconnectTimer: any = null;
+    private reconnectTimer: number | null = null;
     private maxReconnectAttempts = 3;
     private intentionalDisconnect = false;
 
@@ -49,18 +41,14 @@ export class MovesenseConnectionService {
 
             this.deviceName.set(this.device.name || 'Movesense Device');
 
-            // Configurar manejador de desconexión
             this.device.addEventListener('gattserverdisconnected', this.handleDisconnect.bind(this));
 
-            // Establecer conexión
             this.bleServer = await this.device.gatt.connect();
 
-            // Obtener servicio y características
             const service = await this.bleServer.getPrimaryService(MOVESENSE_BLE.SERVICE_UUID);
             this.commandChar = await service.getCharacteristic(MOVESENSE_BLE.CHAR_COMMAND_UUID);
             this.notifyChar = await service.getCharacteristic(MOVESENSE_BLE.CHAR_NOTIFY_UUID);
 
-            // Iniciar notificaciones
             await this.notifyChar.startNotifications();
             this.isConnected.set(true);
 
@@ -101,7 +89,7 @@ export class MovesenseConnectionService {
             try {
                 this.notifyChar.removeEventListener('characteristicvaluechanged', this.notificationHandler);
             } catch (e) {
-                // Error silencioso intencional
+                // Intentional silent error
             }
             this.notificationHandler = null;
         }
@@ -111,8 +99,41 @@ export class MovesenseConnectionService {
         this.enqueueCommand(commandData, commandDescription);
     }
 
-    getNotifyCharacteristic(): BluetoothRemoteGATTCharacteristic | null {
-        return this.notifyChar;
+    sendRestCommand(method: number, path: string, description: string): void {
+        const command = createMovesenseCommand(method, path);
+        this.sendCommandRaw(command, description);
+    }
+
+    subscribeToSensors(): void {
+        if (!this.isConnected()) {
+            return;
+        }
+
+        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_TEMP, 'Stop Temperature');
+        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_ACC, 'Stop Accelerometer');
+        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_HR, 'Stop Heart Rate');
+        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_GYRO, 'Stop Gyroscope');
+        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_MAGN, 'Stop Magnetometer');
+        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_ECG, 'Stop ECG');
+
+        setTimeout(() => {
+            this.sendCommandRaw(MOVESENSE_COMMANDS.TEMPERATURE, 'Temperature sensor');
+            this.sendCommandRaw(MOVESENSE_COMMANDS.ECG, 'ECG sensor');
+            this.sendCommandRaw(MOVESENSE_COMMANDS.MAGNETOMETER, 'Magnetometer sensor');
+            this.sendCommandRaw(new Uint8Array([0x0c, 0x62, 0x2f, 0x4d, 0x65, 0x61, 0x73, 0x2f, 0x41, 0x63, 0x63, 0x2f, 0x31, 0x33]), 'Accelerometer 13Hz');
+            this.sendCommandRaw(new Uint8Array([0x0c, 0x63, 0x01]), 'Heart Rate (simplified)');
+            this.sendCommandRaw(new Uint8Array([0x0c, 0x64, 0x2f, 0x4d, 0x65, 0x61, 0x73, 0x2f, 0x47, 0x79, 0x72, 0x6f, 0x2f, 0x35, 0x32]), 'Gyroscope 52Hz');
+        }, 1000);
+    }
+
+    requestDeviceInfo(): void {
+        if (!this.isConnected()) {
+            return;
+        }
+
+        this.sendRestCommand(MOVESENSE_METHOD.GET, '/System/Info', 'Device Info');
+        this.sendRestCommand(MOVESENSE_METHOD.GET, '/System/Energy/Level', 'Battery Level');
+        this.sendRestCommand(MOVESENSE_METHOD.GET, '/System/Sensors', 'Available Sensors');
     }
 
     private enqueueCommand(command: Uint8Array, description: string): void {
@@ -128,7 +149,6 @@ export class MovesenseConnectionService {
         this.isProcessingQueue = true;
 
         try {
-            // Limitar la velocidad de comandos
             const now = Date.now();
             const timeSinceLastCommand = now - this.lastCommandTime;
 
@@ -141,7 +161,7 @@ export class MovesenseConnectionService {
             this.lastCommandTime = Date.now();
 
         } catch (error) {
-            // Error silencioso intencional
+            // Intentional silent error
         } finally {
             this.isProcessingQueue = false;
 
@@ -174,7 +194,7 @@ export class MovesenseConnectionService {
             this.reconnectAttempts.update(attempts => attempts + 1);
 
             this.clearReconnectTimer();
-            this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = window.setTimeout(() => {
                 this.attemptReconnect();
             }, 2000);
         } else {
@@ -199,7 +219,7 @@ export class MovesenseConnectionService {
         } catch (error) {
             if (this.reconnectAttempts() < this.maxReconnectAttempts) {
                 this.clearReconnectTimer();
-                this.reconnectTimer = setTimeout(() => {
+                this.reconnectTimer = window.setTimeout(() => {
                     this.attemptReconnect();
                 }, 3000);
             } else {
@@ -214,8 +234,8 @@ export class MovesenseConnectionService {
     }
 
     private clearReconnectTimer(): void {
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer);
+        if (this.reconnectTimer !== null) {
+            window.clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
         }
     }
@@ -242,144 +262,5 @@ export class MovesenseConnectionService {
         this.isProcessingQueue = false;
 
         this.clearReconnectTimer();
-    }
-
-    tryAlternativeFormats(): void {
-        if (!this.isConnected()) {
-            return;
-        }
-
-        // Detener todos los sensores primero (para evitar sobrecarga)
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_TEMP, 'Stop Temperature');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_ACC, 'Stop Accelerometer');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_HR, 'Stop Heart Rate');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_GYRO, 'Stop Gyroscope');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_MAGN, 'Stop Magnetometer');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_ECG, 'Stop ECG');
-
-        // Formato alternativo 1
-        setTimeout(() => {
-            this.sendCommandRaw(MOVESENSE_COMMANDS.TEMP_ALT1, 'Temperature (Alt 1)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.ACC_ALT1, 'Accelerometer (Alt 1)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.HR_ALT1, 'Heart Rate (Alt 1)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.GYRO_ALT1, 'Gyroscope (Alt 1)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.MAGN_ALT1, 'Magnetometer (Alt 1)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.ECG_ALT1, 'ECG (Alt 1)');
-        }, 1000);
-
-        // Formato alternativo 2
-        setTimeout(() => {
-            this.sendCommandRaw(MOVESENSE_COMMANDS.TEMP_ALT2, 'Temperature (Alt 2)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.ACC_ALT2, 'Accelerometer (Alt 2)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.HR_ALT2, 'Heart Rate (Alt 2)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.GYRO_ALT2, 'Gyroscope (Alt 2)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.MAGN_ALT2, 'Magnetometer (Alt 2)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.ECG_ALT2, 'ECG (Alt 2)');
-        }, 3000);
-
-        // Formato alternativo 3
-        setTimeout(() => {
-            this.sendCommandRaw(MOVESENSE_COMMANDS.TEMP_ALT3, 'Temperature (Alt 3)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.ACC_ALT3, 'Accelerometer (Alt 3)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.HR_ALT3, 'Heart Rate (Alt 3)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.GYRO_ALT3, 'Gyroscope (Alt 3)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.MAGN_ALT3, 'Magnetometer (Alt 3)');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.ECG_ALT3, 'ECG (Alt 3)');
-        }, 5000);
-
-        // Probar diferentes frecuencias de muestreo
-        setTimeout(() => {
-            this.sendCommandRaw(MOVESENSE_COMMANDS.ACC_13HZ, 'Accelerometer 13Hz');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.GYRO_26HZ, 'Gyroscope 26Hz');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.MAGN_13HZ, 'Magnetometer 13Hz');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.ECG_125HZ, 'ECG 125Hz');
-        }, 7000);
-
-        // Solicitar información del dispositivo
-        setTimeout(() => {
-            this.sendCommandRaw(MOVESENSE_COMMANDS.INFO, 'Device Info');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.BATTERY, 'Battery Level');
-        }, 9000);
-    }
-
-    subscribeToSensors(): void {
-        if (!this.isConnected()) {
-            return;
-        }
-
-        // Detener todos los sensores primero para obtener sus respuestas "Hello"
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_TEMP, 'Stop Temperature');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_ACC, 'Stop Accelerometer');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_HR, 'Stop Heart Rate');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_GYRO, 'Stop Gyroscope');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_MAGN, 'Stop Magnetometer');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_ECG, 'Stop ECG');
-
-        // Esperar un segundo para las respuestas Hello
-        setTimeout(() => {
-            // Enviar comandos de activación para todos los sensores
-            this.sendCommandRaw(MOVESENSE_COMMANDS.TEMPERATURE, 'Temperature sensor');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.ECG, 'ECG sensor');
-            this.sendCommandRaw(MOVESENSE_COMMANDS.MAGNETOMETER, 'Magnetometer sensor');
-            this.sendCommandRaw(new Uint8Array([0x0c, 0x62, 0x2f, 0x4d, 0x65, 0x61, 0x73, 0x2f, 0x41, 0x63, 0x63, 0x2f, 0x31, 0x33]), 'Accelerometer 13Hz');
-            this.sendCommandRaw(new Uint8Array([0x0c, 0x63, 0x01]), 'Heart Rate (simplified)');
-            this.sendCommandRaw(new Uint8Array([0x0c, 0x64, 0x2f, 0x4d, 0x65, 0x61, 0x73, 0x2f, 0x47, 0x79, 0x72, 0x6f, 0x2f, 0x35, 0x32]), 'Gyroscope 52Hz');
-        }, 1000);
-    }
-
-    sendRestCommand(method: number, path: string, description: string): void {
-        const command = createMovesenseCommand(method, path);
-        this.sendCommandRaw(command, description);
-    }
-
-    requestDeviceInfo(): void {
-        if (!this.isConnected()) {
-            return;
-        }
-
-        this.sendRestCommand(MOVESENSE_METHOD.GET, '/System/Info', 'Device Info');
-        this.sendRestCommand(MOVESENSE_METHOD.GET, '/System/Energy/Level', 'Battery Level');
-        this.sendRestCommand(MOVESENSE_METHOD.GET, '/System/Sensors', 'Available Sensors');
-    }
-
-    tryModel202030001552Format(): void {
-        if (!this.isConnected()) {
-            return;
-        }
-
-        // Detener todos los sensores primero
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_TEMP, 'Stop Temperature');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_ACC, 'Stop Accelerometer');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_HR, 'Stop Heart Rate');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_GYRO, 'Stop Gyroscope');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_MAGN, 'Stop Magnetometer');
-        this.sendCommandRaw(MOVESENSE_COMMANDS.STOP_ECG, 'Stop ECG');
-
-        // Esperar a que todo se detenga
-        setTimeout(() => {
-            // Probar comandos específicos para este modelo en secuencia
-            this.sendCommandRaw(new Uint8Array([0x01, 0x11, 0x2f, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6d, 0x2f, 0x49, 0x6e, 0x66, 0x6f]), 'Request System Info');
-
-            // Temperatura - el comando estándar parece funcionar
-            this.sendCommandRaw(MOVESENSE_COMMANDS.TEMPERATURE, 'Temperature (standard)');
-
-            // Acelerómetro - probar diferentes tasas de muestreo
-            setTimeout(() => this.sendCommandRaw(new Uint8Array([0x0c, 0x62, 0x2f, 0x4d, 0x65, 0x61, 0x73, 0x2f, 0x41, 0x63, 0x63, 0x2f, 0x31, 0x33]), 'Accelerometer 13Hz'), 200);
-            setTimeout(() => this.sendCommandRaw(new Uint8Array([0x0c, 0x62, 0x2f, 0x4d, 0x65, 0x61, 0x73, 0x2f, 0x41, 0x63, 0x63, 0x2f, 0x35, 0x32]), 'Accelerometer 52Hz'), 400);
-
-            // Ritmo cardíaco - probar formato simplificado
-            setTimeout(() => this.sendCommandRaw(new Uint8Array([0x0c, 0x63, 0x2f, 0x4d, 0x65, 0x61, 0x73, 0x2f, 0x48, 0x52]), 'Heart Rate (standard)'), 600);
-            setTimeout(() => this.sendCommandRaw(new Uint8Array([0x0c, 0x63, 0x01]), 'Heart Rate (simplified)'), 800);
-
-            // ECG - el formato estándar parece funcionar
-            setTimeout(() => this.sendCommandRaw(MOVESENSE_COMMANDS.ECG, 'ECG (standard)'), 1000);
-
-            // Giroscopio - probar diferentes tasas de muestreo
-            setTimeout(() => this.sendCommandRaw(new Uint8Array([0x0c, 0x64, 0x2f, 0x4d, 0x65, 0x61, 0x73, 0x2f, 0x47, 0x79, 0x72, 0x6f, 0x2f, 0x35, 0x32]), 'Gyroscope 52Hz'), 1200);
-            setTimeout(() => this.sendCommandRaw(new Uint8Array([0x0c, 0x64, 0x01]), 'Gyroscope (simplified)'), 1400);
-
-            // Magnetómetro - el formato estándar parece funcionar
-            setTimeout(() => this.sendCommandRaw(MOVESENSE_COMMANDS.MAGNETOMETER, 'Magnetometer (standard)'), 1600);
-        }, 1000);
     }
 }

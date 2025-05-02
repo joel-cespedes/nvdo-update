@@ -1,20 +1,20 @@
-import { Component, computed, inject } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
 import { CommonModule } from '@angular/common';
-import { ConnectionComponent } from './features/connection/connection.component';
-import { TemperatureDisplayComponent } from './features/temperature-display/temperature-display.component';
-import { HrChartComponent } from './features/hr-chart/hr-chart.component';
-import { AccChartComponent } from './features/acc-chart/acc-chart.component';
-import { EcgChartComponent } from './features/ecg-chart/ecg-chart.component';
-import { MetricsDisplayComponent } from './features/metrics-display/metrics-display.component';
-import { GyroDisplayComponent } from './features/gyro-display/gyro-display.component';
-import { MagnDisplayComponent } from './features/magn-display/magn-display.component';
-import { StoredEcgListComponent } from './features/stored-ecg-list/stored-ecg-list.component';
-import { SensorStatus } from './core/models/sensor-data.model';
+import { Component, inject, linkedSignal } from '@angular/core';
+import { RouterOutlet } from '@angular/router';
 import { MovesenseService } from './core/services/movesense.service';
+import { AccChartComponent } from './features/acc-chart/acc-chart.component';
+import { ConnectionComponent } from './features/connection/connection.component';
+import { EcgChartComponent } from './features/ecg-chart/ecg-chart.component';
+import { GyroDisplayComponent } from './features/gyro-display/gyro-display.component';
+import { HrChartComponent } from './features/hr-chart/hr-chart.component';
+import { MagnDisplayComponent } from './features/magn-display/magn-display.component';
+import { MetricsDisplayComponent } from './features/metrics-display/metrics-display.component';
+import { StoredEcgListComponent } from './features/stored-ecg-list/stored-ecg-list.component';
+import { TemperatureDisplayComponent } from './features/temperature-display/temperature-display.component';
 
 @Component({
   selector: 'app-root',
+  standalone: true,
   imports: [
     CommonModule,
     RouterOutlet,
@@ -34,14 +34,12 @@ import { MovesenseService } from './core/services/movesense.service';
 export class AppComponent {
   private movesenseService = inject(MovesenseService);
 
-  // Signals para estados de sensores
-  readonly temperatureStatus = computed(() => this.movesenseService.temperatureStatus());
-  readonly accelerometerStatus = computed(() => this.movesenseService.accelerometerStatus());
-  readonly heartRateStatus = computed(() => this.movesenseService.heartRateStatus());
-  readonly gyroscopeStatus = computed(() => this.movesenseService.gyroscopeStatus());
-  readonly magnetometerStatus = computed(() => this.movesenseService.magnetometerStatus());
-  readonly ecgStatus = computed(() => this.movesenseService.ecgStatus());
-
-  // Signal para determinar si hay ECGs guardados
-  readonly hasStoredEcgs = computed(() => this.movesenseService.hasStoredEcgs());
+  // Link signals directly from the service
+  readonly temperatureStatus = linkedSignal(this.movesenseService.temperatureStatus);
+  readonly accelerometerStatus = linkedSignal(this.movesenseService.accelerometerStatus);
+  readonly heartRateStatus = linkedSignal(this.movesenseService.heartRateStatus);
+  readonly gyroscopeStatus = linkedSignal(this.movesenseService.gyroscopeStatus);
+  readonly magnetometerStatus = linkedSignal(this.movesenseService.magnetometerStatus);
+  readonly ecgStatus = linkedSignal(this.movesenseService.ecgStatus);
+  readonly hasStoredEcgs = linkedSignal(this.movesenseService.hasStoredEcgs);
 }

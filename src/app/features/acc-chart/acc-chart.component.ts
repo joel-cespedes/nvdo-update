@@ -1,10 +1,10 @@
-import { Component, inject, signal, computed, effect } from '@angular/core';
+import { Component, inject, signal, effect, linkedSignal } from '@angular/core';
 import { NgxChartsModule, ScaleType } from '@swimlane/ngx-charts';
 import { CommonModule } from '@angular/common';
 import { MovesenseService } from '../../core/services/movesense.service';
 import { AccelerometerData } from '../../core/models/sensor-data.model';
 
-// Interfaces para datos del gráfico
+// Chart data interfaces
 interface ChartData {
     name: string;
     series: ChartSeriesData[];
@@ -21,19 +21,23 @@ const MAX_ACC_DATA_POINTS = 100;
     selector: 'app-acc-chart',
     templateUrl: './acc-chart.component.html',
     styleUrls: ['./acc-chart.component.scss'],
+    standalone: true,
     imports: [NgxChartsModule, CommonModule]
 })
 export class AccChartComponent {
     private movesenseService = inject(MovesenseService);
 
-    // Signal para datos del gráfico
+    // Chart data signal
     readonly chartData = signal<ChartData[]>([
         { name: 'X', series: [] },
         { name: 'Y', series: [] },
         { name: 'Z', series: [] }
     ]);
 
-    // Configuración del gráfico
+    // Link connection status signal
+    readonly isConnected = linkedSignal(this.movesenseService.isConnected);
+
+    // Chart configuration
     readonly view: [number, number] = [700, 300];
     readonly legend = true;
     readonly showXAxisLabel = true;
@@ -49,11 +53,8 @@ export class AccChartComponent {
     };
     readonly autoScale = true;
 
-    // Signal computado para estado de conexión
-    readonly isConnected = computed(() => this.movesenseService.isConnected());
-
     constructor() {
-        // Effect para actualizar gráfico cuando llegan nuevos datos de acelerómetro
+        // Effect to update chart when new accelerometer data arrives
         effect(() => {
             const newAccData = this.movesenseService.accelerometerData();
             if (newAccData && this.isConnected()) {
@@ -61,7 +62,7 @@ export class AccChartComponent {
             }
         });
 
-        // Effect para limpiar gráfico al desconectar
+        // Effect to clear chart when disconnected
         effect(() => {
             if (!this.isConnected()) {
                 this.chartData.set([
@@ -75,14 +76,14 @@ export class AccChartComponent {
 
     private updateChart(newData: AccelerometerData): void {
         this.chartData.update(currentChartData => {
-            // Crear un único nuevo punto de datos
+            // Create a single new data point
             const timestamp = new Date(newData.timestamp);
 
             const newPointX: ChartSeriesData = { name: timestamp, value: newData.x };
             const newPointY: ChartSeriesData = { name: timestamp, value: newData.y };
             const newPointZ: ChartSeriesData = { name: timestamp, value: newData.z };
 
-            // Añadir nuevos puntos y limitar historial
+            // Add new points and limit history length
             const updatedSeriesX = [...currentChartData[0].series, newPointX].slice(-MAX_ACC_DATA_POINTS);
             const updatedSeriesY = [...currentChartData[1].series, newPointY].slice(-MAX_ACC_DATA_POINTS);
             const updatedSeriesZ = [...currentChartData[2].series, newPointZ].slice(-MAX_ACC_DATA_POINTS);
@@ -95,7 +96,7 @@ export class AccChartComponent {
         });
     }
 
-    // Formateo personalizado para ticks del eje X
+    // Custom formatting for X-axis ticks
     xAxisTickFormatting(val: string | Date): string {
         if (val instanceof Date) {
             return val.toLocaleTimeString([], {

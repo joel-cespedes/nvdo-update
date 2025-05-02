@@ -4,9 +4,13 @@
     @if(isConnected()) {
     <div class="ecg-chart__controls">
       @if (isRecording()) {
-      <button class="ecg-chart__button ecg-chart__button--stop" (click)="stopRecording()">Detener Grabación</button>
+      <button class="ecg-chart__button ecg-chart__button--stop" (click)="stopRecording()">
+        Detener Grabación
+      </button>
       } @else {
-      <button class="ecg-chart__button ecg-chart__button--start" (click)="startRecording()">Iniciar Grabación</button>
+      <button class="ecg-chart__button ecg-chart__button--start" (click)="startRecording()">
+        Iniciar Grabación
+      </button>
       }
     </div>
     }

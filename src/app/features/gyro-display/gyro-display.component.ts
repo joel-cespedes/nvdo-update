@@ -1,27 +1,22 @@
-import { Component, inject, computed } from '@angular/core';
+import { Component, inject, computed, linkedSignal } from '@angular/core';
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { MovesenseService } from '../../core/services/movesense.service';
-import { GyroscopeData } from '../../core/models/sensor-data.model';
 
 @Component({
     selector: 'app-gyro-display',
     templateUrl: './gyro-display.component.html',
     styleUrls: ['./gyro-display.component.scss'],
+    standalone: true,
     imports: [CommonModule, DecimalPipe]
 })
 export class GyroDisplayComponent {
     private movesenseService = inject(MovesenseService);
 
-    // Computed signals
-    readonly gyroData = computed<GyroscopeData | null>(
-        () => this.movesenseService.gyroscopeData()
-    );
+    // Link signals from service
+    readonly gyroData = linkedSignal(this.movesenseService.gyroscopeData);
+    readonly isConnected = linkedSignal(this.movesenseService.isConnected);
 
-    readonly isConnected = computed<boolean>(
-        () => this.movesenseService.isConnected()
-    );
-
-    // Computed signal para datos de muestras más recientes
+    // Computed for latest sample data
     readonly latestSample = computed(() => {
         const data = this.gyroData();
         if (data && data.samples && data.samples.length > 0) {
