@@ -1,0 +1,85 @@
+/* src/app/features/memory-recording-viewer/memory-recording-viewer.component.scss */
+.memory-viewer {
+  width: 100%;
+
+  &__info {
+    margin-bottom: 1rem;
+  }
+
+  &__name {
+    font-size: 1.1rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+  }
+
+  &__details {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.9rem;
+    color: #666;
+  }
+
+  &__date,
+  &__duration {
+    &::after {
+      content: "·";
+      margin-left: 1rem;
+      color: #bbb;
+    }
+
+    &:last-child::after {
+      display: none;
+    }
+  }
+
+  &__metric-selector {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+
+  &__metric-button {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: #f9f9f9;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background-color: #f1f1f1;
+    }
+
+    &--active {
+      background-color: #e3f2fd;
+      border-color: #bbdefb;
+      color: #1565c0;
+    }
+  }
+
+  &__chart {
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 1rem;
+    min-height: 300px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  &__chart-container {
+    width: 100%;
+    height: 300px;
+  }
+
+  &__no-data {
+    color: #9e9e9e;
+    font-style: italic;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 250px;
+  }
+}

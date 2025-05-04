@@ -16,6 +16,7 @@ export class MovesenseConnectionService {
     private notifyChar: BluetoothRemoteGATTCharacteristic | null = null;
     private device: BluetoothDevice | null = null;
     private notificationHandler: ((event: Event) => void) | null = null;
+    private logbookCallback: ((data: Uint8Array) => void) | null = null;
 
     private commandQueue: { command: Uint8Array, description: string }[] = [];
     private isProcessingQueue = false;
@@ -74,6 +75,10 @@ export class MovesenseConnectionService {
         }, 500);
     }
 
+    setLogbookCallback(callback: (data: Uint8Array) => void): void {
+        this.logbookCallback = callback;
+    }
+
     registerNotificationHandler(handler: (event: Event) => void): void {
         if (!this.notifyChar || !this.isConnected()) {
             return;
@@ -81,15 +86,60 @@ export class MovesenseConnectionService {
 
         this.unregisterNotificationHandler();
         this.notificationHandler = handler;
-        this.notifyChar.addEventListener('characteristicvaluechanged', handler);
+        this.notifyChar.addEventListener('characteristicvaluechanged', this.handleNotifications.bind(this));
     }
+
+    private handleNotifications(event: Event): void {
+        try {
+            const characteristic = (event.target as BluetoothRemoteGATTCharacteristic);
+            const dataView = characteristic.value;
+
+            if (!dataView) return;
+
+            const data = new Uint8Array(dataView.buffer);
+            if (data.length === 0) return;
+
+            console.log('Notificación recibida, longitud:', data.length);
+
+            // Verificar si es una respuesta del LogBook
+            const isLogbook = this.checkIfLogbookResponse(data);
+
+            if (isLogbook && this.logbookCallback) {
+                this.logbookCallback(data);
+            } else if (this.notificationHandler) {
+                this.notificationHandler(event);
+            }
+        } catch (error) {
+            console.error('Error en handleNotifications:', error);
+        }
+    }
+    private checkIfLogbookResponse(data: Uint8Array): boolean {
+        // Ignorar respuestas "Hello" (empiezan con byte 72 'H' en tercera posición)
+        if (data.length === 7 && data[2] === 72) {
+            return false;
+        }
+
+        // Solo aceptar mensajes que realmente vengan del LogBook
+        if (data.length > 5 && (data[0] === 0x01 || data[0] === 0x02)) {
+            if (data[1] === 0x2F && // '/'
+                data[2] === 0x4D && // 'M'
+                data[3] === 0x65 && // 'e'
+                data[4] === 0x6D) { // 'm'
+                console.log("Respuesta genuina de LogBook detectada");
+                return true;
+            }
+        }
+
+        return false;
+    }
+
 
     unregisterNotificationHandler(): void {
         if (this.notifyChar && this.notificationHandler) {
             try {
-                this.notifyChar.removeEventListener('characteristicvaluechanged', this.notificationHandler);
+                this.notifyChar.removeEventListener('characteristicvaluechanged', this.handleNotifications.bind(this));
             } catch (e) {
-                // Intentional silent error
+                // Error silencioso
             }
             this.notificationHandler = null;
         }
@@ -161,7 +211,7 @@ export class MovesenseConnectionService {
             this.lastCommandTime = Date.now();
 
         } catch (error) {
-            // Intentional silent error
+            // Error silencioso
         } finally {
             this.isProcessingQueue = false;
 

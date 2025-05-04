@@ -39,6 +39,7 @@
         <span class="sensor-status__name">ECG:</span>
         <span class="sensor-status__value">{{ ecgStatus() }}</span>
       </div>
+
     </div>
   </div>
 
@@ -50,6 +51,7 @@
     <app-temperature-display />
     <app-hr-chart />
     <app-acc-chart />
+          <app-memory-recording />
     <app-ecg-chart />
     <app-gyro-display />
     <app-magn-display />
@@ -58,6 +60,9 @@
   <!-- ECGs Guardados -->
   @if (hasStoredEcgs()) {
   <app-stored-ecg-list class="stored-ecg-section" />
+  }
+  @if (hasStoredMemoryRecordings()) {
+  <app-memory-recording-list class="stored-memory-section" />
   }
 
   <router-outlet />

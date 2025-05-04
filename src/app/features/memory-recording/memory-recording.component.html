@@ -1,0 +1,57 @@
+<div class="memory-recording">
+    <div class="memory-recording__header">
+        <h3 class="memory-recording__title">Grabación en Memoria</h3>
+        @if(isConnected()) {
+        <div class="memory-recording__controls">
+            @if (isRecording()) {
+            <button class="memory-recording__button memory-recording__button--stop" (click)="stopRecording()">
+                Detener Grabación ({{ secondsElapsed() }}s)
+            </button>
+            } @else if (recordingStatus() === 'downloading') {
+            <div class="memory-recording__status memory-recording__status--downloading">
+                Descargando datos ({{ bytesDownloaded() }} bytes)
+            </div>
+            } @else {
+            <button class="memory-recording__button memory-recording__button--start" (click)="startRecording()">
+                Iniciar Grabación en Memoria
+            </button>
+            }
+        </div>
+        }
+    </div>
+
+    @if (isConnected()) {
+    @if (recordingStatus() === 'recording') {
+    <div class="memory-recording__info memory-recording__info--recording">
+        <div class="memory-recording__recording-indicator"></div>
+        <span>Grabando datos en la memoria del dispositivo... ({{ secondsElapsed() }}s)</span>
+        <p class="memory-recording__description">
+            El dispositivo está grabando datos de los sensores en su memoria interna.
+            Los datos se guardarán incluso si se pierde la conexión Bluetooth.
+        </p>
+    </div>
+    } @else if (recordingStatus() === 'downloading') {
+    <div class="memory-recording__info memory-recording__info--downloading">
+        <div class="memory-recording__spinner"></div>
+        <span>Descargando datos del dispositivo... ({{ bytesDownloaded() }} bytes)</span>
+    </div>
+    } @else {
+    <div class="memory-recording__info">
+        <p>
+            Utiliza esta función para grabar datos de sensores directamente en la
+            memoria del dispositivo, incluso cuando no hay conexión Bluetooth activa.
+        </p>
+    </div>
+    }
+    } @else {
+    <div class="memory-recording__disconnected">
+        Conecta el dispositivo para usar la grabación en memoria
+    </div>
+    }
+
+    @if (hasStoredRecordings()) {
+    <div class="memory-recording__stored-info">
+        <span class="memory-recording__stored-badge">Grabaciones Guardadas Disponibles</span>
+    </div>
+    }
+</div>

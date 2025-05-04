@@ -11,6 +11,8 @@ import { MagnDisplayComponent } from './features/magn-display/magn-display.compo
 import { MetricsDisplayComponent } from './features/metrics-display/metrics-display.component';
 import { StoredEcgListComponent } from './features/stored-ecg-list/stored-ecg-list.component';
 import { TemperatureDisplayComponent } from './features/temperature-display/temperature-display.component';
+import { MemoryRecordingComponent } from './features/memory-recording/memory-recording.component';
+import { MemoryRecordingListComponent } from './features/memory-recording-list/memory-recording-list.component';
 
 @Component({
   selector: 'app-root',
@@ -26,7 +28,9 @@ import { TemperatureDisplayComponent } from './features/temperature-display/temp
     MetricsDisplayComponent,
     GyroDisplayComponent,
     MagnDisplayComponent,
-    StoredEcgListComponent
+    StoredEcgListComponent,
+    MemoryRecordingComponent,
+    MemoryRecordingListComponent
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
@@ -42,4 +46,6 @@ export class AppComponent {
   readonly magnetometerStatus = linkedSignal(this.movesenseService.magnetometerStatus);
   readonly ecgStatus = linkedSignal(this.movesenseService.ecgStatus);
   readonly hasStoredEcgs = linkedSignal(this.movesenseService.hasStoredEcgs);
+
+  readonly hasStoredMemoryRecordings = linkedSignal(this.movesenseService.hasStoredMemoryRecordings);
 }

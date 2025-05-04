@@ -1,0 +1,46 @@
+<!-- src/app/features/memory-recording-viewer/memory-recording-viewer.component.html -->
+<div class="memory-viewer">
+    @if (recordingData()) {
+    <div class="memory-viewer__info">
+        <div class="memory-viewer__name">
+            {{ recordingData()?.name || 'Grabación sin nombre' }}
+        </div>
+        <div class="memory-viewer__details">
+            <span class="memory-viewer__date">
+                {{ recordingData()?.timestamp | date:'medium' }}
+            </span>
+            <span class="memory-viewer__duration">
+                Duración: {{ recordingData() ? recordingData()!.duration.toFixed(1) : 0 }}s
+            </span>
+        </div>
+    </div>
+
+    <div class="memory-viewer__metric-selector">
+        @for (metric of availableMetrics(); track metric.id) {
+        <button class="memory-viewer__metric-button"
+            [class.memory-viewer__metric-button--active]="selectedMetric() === metric.id"
+            (click)="selectMetric(metric.id)">
+            {{ metric.name }}
+        </button>
+        }
+    </div>
+
+    <div class="memory-viewer__chart">
+        @if (chartData().length > 0) {
+        <ngx-charts-line-chart class="memory-viewer__chart-container" [view]="view" [scheme]="colorScheme"
+            [results]="chartData()" [legend]="legend" [xAxis]="true" [yAxis]="true" [showXAxisLabel]="showXAxisLabel"
+            [showYAxisLabel]="showYAxisLabel" [xAxisLabel]="xAxisLabel" [yAxisLabel]="yAxisLabel()"
+            [timeline]="timeline" [autoScale]="autoScale" [xAxisTickFormatting]="xAxisTickFormatting">
+        </ngx-charts-line-chart>
+        } @else {
+        <div class="memory-viewer__no-data">
+            No hay datos disponibles para este tipo de sensor
+        </div>
+        }
+    </div>
+    } @else {
+    <div class="memory-viewer__no-data">
+        No se encontró la grabación solicitada
+    </div>
+    }
+</div>

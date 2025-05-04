@@ -1,0 +1,63 @@
+<!-- src/app/features/memory-recording-list/memory-recording-list.component.html -->
+<div class="memory-recording-list">
+    <h3 class="memory-recording-list__title">Grabaciones en Memoria</h3>
+
+    @if (hasStoredRecordings()) {
+    <div class="memory-recording-list__container">
+        <div class="memory-recording-list__list">
+            @for (recording of storedRecordings(); track recording.id) {
+            <div class="memory-recording-list__item"
+                [class.memory-recording-list__item--selected]="selectedRecordingId() === recording.id"
+                (click)="selectRecording(recording.id)">
+                <div class="memory-recording-list__item-info">
+                    <div class="memory-recording-list__item-name">
+                        {{ recording.name || 'Grabación sin nombre' }}
+                    </div>
+                    <div class="memory-recording-list__item-date">
+                        {{ formatDateShort(recording.timestamp) }}
+                    </div>
+                    <div class="memory-recording-list__item-duration">
+                        Duración: {{ formatDuration(recording.duration) }}
+                    </div>
+                </div>
+                <button class="memory-recording-list__delete-btn" (click)="deleteRecording(recording.id, $event)"
+                    aria-label="Eliminar grabación">
+                    ✕
+                </button>
+            </div>
+            }
+        </div>
+
+        @if (selectedRecordingId()) {
+        <div class="memory-recording-list__details">
+            <div class="memory-recording-list__name-edit">
+                <input type="text" class="memory-recording-list__name-input" [value]="newRecordingName()"
+                    (input)="updateNewName($event)" placeholder="Nombre de la grabación" />
+                <button class="memory-recording-list__save-btn" (click)="saveRecordingName()"
+                    [disabled]="!newRecordingName()">
+                    Guardar
+                </button>
+            </div>
+
+            <app-memory-recording-viewer [recordingId]="selectedRecordingId() || ''"
+                class="memory-recording-list__viewer">
+            </app-memory-recording-viewer>
+        </div>
+        } @else {
+        <div class="memory-recording-list__no-selection">
+            Selecciona una grabación para visualizarla
+        </div>
+        }
+    </div>
+    } @else {
+    <div class="memory-recording-list__empty">
+        No hay grabaciones guardadas. Utiliza la función de grabación en memoria.
+    </div>
+    }
+    <div class="memory-recording-list__header">
+        <h3 class="memory-recording-list__title">Grabaciones en Memoria</h3>
+        <button class="memory-recording-list__clear-btn" (click)="clearAllRecordings()">
+            Limpiar todas
+        </button>
+    </div>
+</div>
