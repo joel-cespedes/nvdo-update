@@ -9,13 +9,13 @@ export interface AccelerometerData {
 
 export interface TemperatureData {
     timestamp: number;
-    measurement: number; // In Celsius
+    measurement: number; // En Celsius
 }
 
 export interface HeartRateData {
     timestamp: number;
-    hr: number; // Average HR (BPM)
-    rrIntervals?: number[]; // RR intervals in ms
+    hr: number; // Promedio HR (BPM)
+    rrIntervals?: number[]; // Intervalos RR en ms
 }
 
 export interface EcgData {
@@ -33,15 +33,6 @@ export interface MagnetometerData {
     samples: { x: number; y: number; z: number }[];
 }
 
-export interface ImuData {
-    timestamp: number;
-    samples: {
-        acc: { x: number; y: number; z: number };
-        gyro: { x: number; y: number; z: number };
-        magn: { x: number; y: number; z: number };
-    }[];
-}
-
 export type SensorStatus = 'inactive' | 'active' | 'error';
 
 export enum PostureState {
@@ -50,3 +41,12 @@ export enum PostureState {
     STOOPED = 'stooped',
     LYING = 'lying'
 }
+
+// Constantes para límites de sensores - importante para validación
+export const SENSOR_LIMITS = {
+    HR_MIN: 40,
+    HR_MAX: 200,
+    TEMP_MIN: 0,
+    TEMP_MAX: 50,
+    ACC_MAX: 20, // Valor típico para acelerómetro en m/s²
+};

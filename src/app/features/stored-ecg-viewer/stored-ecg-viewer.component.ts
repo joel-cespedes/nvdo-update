@@ -70,31 +70,43 @@ export class StoredEcgViewerComponent implements OnChanges {
     this.ecgData.set(ecg);
     this.generateChartData(ecg);
   }
-
+  /**
+   * Genera datos para visualización ECG médica
+   * Mantiene precisión para uso clínico
+   */
   private generateChartData(ecg: StoredEcg): void {
     const series: ChartSeriesData[] = [];
-    const sampleRateHz = 128; // Assumed sample rate
+    const sampleRateHz = 128; // Frecuencia estándar Movesense ECG
     const timePerSampleMs = 1000 / sampleRateHz;
 
-    // Take up to 2000 samples for performance
-    const maxSamples = 2000;
-    const interval = ecg.samples.length > maxSamples ? Math.floor(ecg.samples.length / maxSamples) : 1;
+    // Factor de conversión µV específico para Movesense (mantener precisión)
+    const LSB_UV = 0.38147;
 
-    // Generate timestamp for each sample
-    let currentTimestampMs = ecg.timestamp;
+    if (ecg.samples.length > 0) {
+      let currentTimestampMs = ecg.timestamp;
 
-    for (let i = 0; i < ecg.samples.length; i += interval) {
-      series.push({
-        name: new Date(currentTimestampMs),
-        value: ecg.samples[i]
-      });
+      // Generar visualización con todos los puntos disponibles
+      // En aplicaciones médicas es importante no omitir datos
+      for (let i = 0; i < ecg.samples.length; i++) {
+        const rawValue = ecg.samples[i];
 
-      currentTimestampMs += timePerSampleMs * interval;
+        // Opción 1: Valor crudo (para desarrollo/depuración)
+        // const value = rawValue;
+
+        // Opción 2: Valor en µV (para uso médico/clínico)
+        const value = rawValue * LSB_UV;
+
+        series.push({
+          name: new Date(currentTimestampMs),
+          value: value
+        });
+
+        currentTimestampMs += timePerSampleMs;
+      }
     }
 
     this.chartData.set([{ name: 'ECG', series }]);
   }
-
   // Axis formatting
   xAxisTickFormatting(val: string | Date): string {
     if (val instanceof Date) {
